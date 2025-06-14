@@ -56,218 +56,217 @@ export default function EditProductScreen() {
 
   return (
     <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.container, { backgroundColor: colors.background }]}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
     >
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <ArrowLeft size={24} color={colors.text} />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.saveButton, { backgroundColor: colors.primary }]}
+          onPress={handleSave}
+        >
+          <Save size={20} color={colors.background} />
+          <Text style={[styles.saveButtonText, { color: colors.background }]}>
+            Save Changes
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.container}>
-          {/* Header */}
-          <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => router.back()}
-            >
-              <ArrowLeft size={24} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.saveButton, { backgroundColor: colors.primary }]}
-              onPress={handleSave}
-            >
-              <Save size={20} color={colors.background} />
-              <Text style={[styles.saveButtonText, { color: colors.background }]}>
-                Save Changes
-              </Text>
-            </TouchableOpacity>
-          </View>
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          {/* Form Fields */}
+          <View style={styles.form}>
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.text }]}>Name *</Text>
+              <TextInput
+                style={[styles.input, { 
+                  color: colors.text,
+                  backgroundColor: colors.lightGray,
+                  borderColor: colors.border
+                }]}
+                value={formData.name}
+                onChangeText={(value) => updateField('name', value)}
+                placeholder="Product name"
+                placeholderTextColor={colors.inactive}
+              />
+            </View>
 
-          <ScrollView 
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Form Fields */}
-            <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.text }]}>Name *</Text>
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.text }]}>Description</Text>
+              <TextInput
+                style={[styles.input, styles.textArea, { 
+                  color: colors.text,
+                  backgroundColor: colors.lightGray,
+                  borderColor: colors.border
+                }]}
+                value={formData.description}
+                onChangeText={(value) => updateField('description', value)}
+                placeholder="Product description"
+                placeholderTextColor={colors.inactive}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.text }]}>Category *</Text>
+              <TextInput
+                style={[styles.input, { 
+                  color: colors.text,
+                  backgroundColor: colors.lightGray,
+                  borderColor: colors.border
+                }]}
+                value={formData.category}
+                onChangeText={(value) => updateField('category', value)}
+                placeholder="Product category"
+                placeholderTextColor={colors.inactive}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.text }]}>Supplier *</Text>
+              <TextInput
+                style={[styles.input, { 
+                  color: colors.text,
+                  backgroundColor: colors.lightGray,
+                  borderColor: colors.border
+                }]}
+                value={formData.supplier}
+                onChangeText={(value) => updateField('supplier', value)}
+                placeholder="Supplier name"
+                placeholderTextColor={colors.inactive}
+              />
+            </View>
+
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={[styles.label, { color: colors.text }]}>Min Stock</Text>
                 <TextInput
                   style={[styles.input, { 
                     color: colors.text,
                     backgroundColor: colors.lightGray,
                     borderColor: colors.border
                   }]}
-                  value={formData.name}
-                  onChangeText={(value) => updateField('name', value)}
-                  placeholder="Product name"
+                  value={formData.minStock?.toString()}
+                  onChangeText={(value) => updateField('minStock', parseInt(value) || 0)}
+                  keyboardType="numeric"
+                  placeholder="0"
                   placeholderTextColor={colors.inactive}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.text }]}>Description</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea, { 
-                    color: colors.text,
-                    backgroundColor: colors.lightGray,
-                    borderColor: colors.border
-                  }]}
-                  value={formData.description}
-                  onChangeText={(value) => updateField('description', value)}
-                  placeholder="Product description"
-                  placeholderTextColor={colors.inactive}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.text }]}>Category *</Text>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={[styles.label, { color: colors.text }]}>Unit</Text>
                 <TextInput
                   style={[styles.input, { 
                     color: colors.text,
                     backgroundColor: colors.lightGray,
                     borderColor: colors.border
                   }]}
-                  value={formData.category}
-                  onChangeText={(value) => updateField('category', value)}
-                  placeholder="Product category"
+                  value={formData.unit}
+                  onChangeText={(value) => updateField('unit', value)}
+                  placeholder="each"
                   placeholderTextColor={colors.inactive}
                 />
               </View>
+            </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.text }]}>Supplier *</Text>
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={[styles.label, { color: colors.text }]}>Cost</Text>
                 <TextInput
                   style={[styles.input, { 
                     color: colors.text,
                     backgroundColor: colors.lightGray,
                     borderColor: colors.border
                   }]}
-                  value={formData.supplier}
-                  onChangeText={(value) => updateField('supplier', value)}
-                  placeholder="Supplier name"
+                  value={formData.cost?.toString()}
+                  onChangeText={(value) => updateField('cost', parseFloat(value) || 0)}
+                  keyboardType="numeric"
+                  placeholder="0.00"
                   placeholderTextColor={colors.inactive}
                 />
               </View>
 
-              <View style={styles.row}>
-                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={[styles.label, { color: colors.text }]}>Min Stock</Text>
-                  <TextInput
-                    style={[styles.input, { 
-                      color: colors.text,
-                      backgroundColor: colors.lightGray,
-                      borderColor: colors.border
-                    }]}
-                    value={formData.minStock?.toString()}
-                    onChangeText={(value) => updateField('minStock', parseInt(value) || 0)}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor={colors.inactive}
-                  />
-                </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={[styles.label, { color: colors.text }]}>Price</Text>
+                <TextInput
+                  style={[styles.input, { 
+                    color: colors.text,
+                    backgroundColor: colors.lightGray,
+                    borderColor: colors.border
+                  }]}
+                  value={formData.price?.toString()}
+                  onChangeText={(value) => updateField('price', parseFloat(value) || 0)}
+                  keyboardType="numeric"
+                  placeholder="0.00"
+                  placeholderTextColor={colors.inactive}
+                />
+              </View>
+            </View>
 
-                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-                  <Text style={[styles.label, { color: colors.text }]}>Unit</Text>
-                  <TextInput
-                    style={[styles.input, { 
-                      color: colors.text,
-                      backgroundColor: colors.lightGray,
-                      borderColor: colors.border
-                    }]}
-                    value={formData.unit}
-                    onChangeText={(value) => updateField('unit', value)}
-                    placeholder="each"
-                    placeholderTextColor={colors.inactive}
+            {/* Quick Actions Section */}
+            <View style={[styles.actionsSection, { borderTopColor: colors.border }]}>
+              <Text style={[styles.actionTitle, { color: colors.text }]}>Quick Actions</Text>
+              
+              {/* Order Section */}
+              <View style={[styles.actionCard, { backgroundColor: colors.lightGray }]}>
+                <Text style={[styles.actionLabel, { color: colors.text }]}>Add to Order</Text>
+                <View style={styles.actionContent}>
+                  <QuantityInput
+                    value={orderQuantity}
+                    onChange={setOrderQuantity}
+                    min={1}
                   />
+                  <TouchableOpacity 
+                    style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                    onPress={handleAddToOrder}
+                  >
+                    <ShoppingBag size={20} color={colors.background} />
+                    <Text style={[styles.actionButtonText, { color: colors.background }]}>
+                      Add to Order
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
 
-              <View style={styles.row}>
-                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={[styles.label, { color: colors.text }]}>Cost</Text>
-                  <TextInput
-                    style={[styles.input, { 
-                      color: colors.text,
-                      backgroundColor: colors.lightGray,
-                      borderColor: colors.border
-                    }]}
-                    value={formData.cost?.toString()}
-                    onChangeText={(value) => updateField('cost', parseFloat(value) || 0)}
-                    keyboardType="numeric"
-                    placeholder="0.00"
-                    placeholderTextColor={colors.inactive}
+              {/* Stocktake Section */}
+              <View style={[styles.actionCard, { backgroundColor: colors.lightGray }]}>
+                <Text style={[styles.actionLabel, { color: colors.text }]}>Add to Stocktake</Text>
+                <View style={styles.actionContent}>
+                  <QuantityInput
+                    value={stocktakeQuantity}
+                    onChange={setStocktakeQuantity}
+                    min={0}
                   />
-                </View>
-
-                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-                  <Text style={[styles.label, { color: colors.text }]}>Price</Text>
-                  <TextInput
-                    style={[styles.input, { 
-                      color: colors.text,
-                      backgroundColor: colors.lightGray,
-                      borderColor: colors.border
-                    }]}
-                    value={formData.price?.toString()}
-                    onChangeText={(value) => updateField('price', parseFloat(value) || 0)}
-                    keyboardType="numeric"
-                    placeholder="0.00"
-                    placeholderTextColor={colors.inactive}
-                  />
-                </View>
-              </View>
-
-              {/* Quick Actions Section */}
-              <View style={[styles.actionsSection, { borderTopColor: colors.border }]}>
-                <Text style={[styles.actionTitle, { color: colors.text }]}>Quick Actions</Text>
-                
-                {/* Order Section */}
-                <View style={[styles.actionCard, { backgroundColor: colors.lightGray }]}>
-                  <Text style={[styles.actionLabel, { color: colors.text }]}>Add to Order</Text>
-                  <View style={styles.actionContent}>
-                    <QuantityInput
-                      value={orderQuantity}
-                      onChange={setOrderQuantity}
-                      min={1}
-                    />
-                    <TouchableOpacity 
-                      style={[styles.actionButton, { backgroundColor: colors.primary }]}
-                      onPress={handleAddToOrder}
-                    >
-                      <ShoppingBag size={20} color={colors.background} />
-                      <Text style={[styles.actionButtonText, { color: colors.background }]}>
-                        Add to Order
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Stocktake Section */}
-                <View style={[styles.actionCard, { backgroundColor: colors.lightGray }]}>
-                  <Text style={[styles.actionLabel, { color: colors.text }]}>Add to Stocktake</Text>
-                  <View style={styles.actionContent}>
-                    <QuantityInput
-                      value={stocktakeQuantity}
-                      onChange={setStocktakeQuantity}
-                      min={0}
-                    />
-                    <TouchableOpacity 
-                      style={[styles.actionButton, { backgroundColor: colors.secondary }]}
-                      onPress={handleAddToStocktake}
-                    >
-                      <ClipboardList size={20} color={colors.background} />
-                      <Text style={[styles.actionButtonText, { color: colors.background }]}>
-                        Add to Stocktake
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, { backgroundColor: colors.secondary }]}
+                    onPress={handleAddToStocktake}
+                  >
+                    <ClipboardList size={20} color={colors.background} />
+                    <Text style={[styles.actionButtonText, { color: colors.background }]}>
+                      Add to Stocktake
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
-          </ScrollView>
-        </View>
+          </View>
+        </ScrollView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
@@ -304,7 +303,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: Platform.OS === 'ios' ? 120 : 90,
   },
   form: {
     flex: 1,

@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Save, ArrowLeft } from 'lucide-react-native';
+import { Save, ArrowLeft, ShoppingBag, ClipboardList } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { Product } from '@/types/inventory';
+import QuantityInput from '@/components/QuantityInput';
 
 export default function EditProductScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { colors } = useThemeStore();
-  const { products, updateProduct } = useInventoryStore();
+  const { products, updateProduct, addToOrder, addToStocktake } = useInventoryStore();
+  const [orderQuantity, setOrderQuantity] = useState(1);
+  const [stocktakeQuantity, setStocktakeQuantity] = useState(0);
 
   const product = products.find(p => p.id === id);
   const [formData, setFormData] = useState<Partial<Product>>(product || {});
@@ -37,37 +40,53 @@ export default function EditProductScreen() {
     router.back();
   };
 
+  const handleAddToOrder = () => {
+    addToOrder(product, orderQuantity);
+    router.replace('/');
+  };
+
+  const handleAddToStocktake = () => {
+    addToStocktake(product, stocktakeQuantity);
+    router.replace('/stocktake');
+  };
+
   const updateField = (field: keyof Product, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   return (
     <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[styles.container, { backgroundColor: colors.background }]}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <ScrollView style={styles.scrollView}>
-          <View style={styles.content}>
-            {/* Header */}
-            <View style={styles.header}>
-              <TouchableOpacity 
-                style={styles.backButton}
-                onPress={() => router.back()}
-              >
-                <ArrowLeft size={24} color={colors.text} />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                onPress={handleSave}
-              >
-                <Save size={20} color={colors.background} />
-                <Text style={[styles.saveButtonText, { color: colors.background }]}>
-                  Save Changes
-                </Text>
-              </TouchableOpacity>
-            </View>
+        <View style={styles.container}>
+          {/* Header */}
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
+              <ArrowLeft size={24} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.saveButton, { backgroundColor: colors.primary }]}
+              onPress={handleSave}
+            >
+              <Save size={20} color={colors.background} />
+              <Text style={[styles.saveButtonText, { color: colors.background }]}>
+                Save Changes
+              </Text>
+            </TouchableOpacity>
+          </View>
 
+          <ScrollView 
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             {/* Form Fields */}
             <View style={styles.form}>
               <View style={styles.inputGroup}>
@@ -88,7 +107,7 @@ export default function EditProductScreen() {
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: colors.text }]}>Description</Text>
                 <TextInput
-                  style={[styles.input, { 
+                  style={[styles.input, styles.textArea, { 
                     color: colors.text,
                     backgroundColor: colors.lightGray,
                     borderColor: colors.border
@@ -98,6 +117,8 @@ export default function EditProductScreen() {
                   placeholder="Product description"
                   placeholderTextColor={colors.inactive}
                   multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
                 />
               </View>
 
@@ -197,9 +218,56 @@ export default function EditProductScreen() {
                   />
                 </View>
               </View>
+
+              {/* Quick Actions Section */}
+              <View style={[styles.actionsSection, { borderTopColor: colors.border }]}>
+                <Text style={[styles.actionTitle, { color: colors.text }]}>Quick Actions</Text>
+                
+                {/* Order Section */}
+                <View style={[styles.actionCard, { backgroundColor: colors.lightGray }]}>
+                  <Text style={[styles.actionLabel, { color: colors.text }]}>Add to Order</Text>
+                  <View style={styles.actionContent}>
+                    <QuantityInput
+                      value={orderQuantity}
+                      onChange={setOrderQuantity}
+                      min={1}
+                    />
+                    <TouchableOpacity 
+                      style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                      onPress={handleAddToOrder}
+                    >
+                      <ShoppingBag size={20} color={colors.background} />
+                      <Text style={[styles.actionButtonText, { color: colors.background }]}>
+                        Add to Order
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Stocktake Section */}
+                <View style={[styles.actionCard, { backgroundColor: colors.lightGray }]}>
+                  <Text style={[styles.actionLabel, { color: colors.text }]}>Add to Stocktake</Text>
+                  <View style={styles.actionContent}>
+                    <QuantityInput
+                      value={stocktakeQuantity}
+                      onChange={setStocktakeQuantity}
+                      min={0}
+                    />
+                    <TouchableOpacity 
+                      style={[styles.actionButton, { backgroundColor: colors.secondary }]}
+                      onPress={handleAddToStocktake}
+                    >
+                      <ClipboardList size={20} color={colors.background} />
+                      <Text style={[styles.actionButtonText, { color: colors.background }]}>
+                        Add to Stocktake
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
             </View>
-          </View>
-        </ScrollView>
+          </ScrollView>
+        </View>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
@@ -209,17 +277,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    padding: 16,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    padding: 16,
+    borderBottomWidth: 1,
   },
   backButton: {
     padding: 8,
@@ -235,6 +298,13 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 16,
     fontWeight: '600',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 32,
   },
   form: {
     flex: 1,
@@ -254,6 +324,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
   },
+  textArea: {
+    height: 100,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
   row: {
     flexDirection: 'row',
     marginBottom: 16,
@@ -262,5 +337,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginTop: 24,
+  },
+  actionsSection: {
+    marginTop: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+  },
+  actionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  actionCard: {
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  actionLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 12,
+  },
+  actionContent: {
+    gap: 12,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });

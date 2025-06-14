@@ -9,6 +9,7 @@ import { Appearance } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { trpc } from "@/lib/trpc";
+import superjson from "superjson";
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
@@ -25,6 +26,7 @@ const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: `${process.env.EXPO_PUBLIC_RORK_API_BASE_URL}/api/trpc`,
+      transformer: superjson,
     }),
   ],
 });

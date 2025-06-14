@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { 
+  StyleSheet, 
+  View, 
+  Text, 
+  ScrollView, 
+  TextInput, 
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+  Alert 
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Save } from 'lucide-react-native';
 import { useInventoryStore } from '@/store/inventoryStore';
@@ -70,7 +82,11 @@ export default function EditProductScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+    >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity 
           style={styles.backButton} 
@@ -88,205 +104,210 @@ export default function EditProductScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.form}>
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Name</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { 
-                backgroundColor: colors.lightGray,
-                color: colors.text,
-                borderColor: errors.name ? colors.error : colors.border
-              }
-            ]}
-            value={formData.name}
-            onChangeText={(text) => setFormData({ ...formData, name: text })}
-            placeholder="Product name"
-            placeholderTextColor={colors.inactive}
-          />
-          {errors.name && (
-            <Text style={[styles.errorText, { color: colors.error }]}>{errors.name}</Text>
-          )}
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Description</Text>
-          <TextInput
-            style={[
-              styles.input,
-              styles.textArea,
-              { 
-                backgroundColor: colors.lightGray,
-                color: colors.text,
-                borderColor: errors.description ? colors.error : colors.border
-              }
-            ]}
-            value={formData.description}
-            onChangeText={(text) => setFormData({ ...formData, description: text })}
-            placeholder="Product description"
-            placeholderTextColor={colors.inactive}
-            multiline
-            numberOfLines={4}
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Barcode</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { 
-                backgroundColor: colors.lightGray,
-                color: colors.text,
-                borderColor: errors.barcode ? colors.error : colors.border
-              }
-            ]}
-            value={formData.barcode}
-            onChangeText={(text) => setFormData({ ...formData, barcode: text })}
-            placeholder="Product barcode"
-            placeholderTextColor={colors.inactive}
-          />
-          {errors.barcode && (
-            <Text style={[styles.errorText, { color: colors.error }]}>{errors.barcode}</Text>
-          )}
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Category</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { 
-                backgroundColor: colors.lightGray,
-                color: colors.text,
-                borderColor: errors.category ? colors.error : colors.border
-              }
-            ]}
-            value={formData.category}
-            onChangeText={(text) => setFormData({ ...formData, category: text })}
-            placeholder="Product category"
-            placeholderTextColor={colors.inactive}
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Supplier</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { 
-                backgroundColor: colors.lightGray,
-                color: colors.text,
-                borderColor: errors.supplier ? colors.error : colors.border
-              }
-            ]}
-            value={formData.supplier}
-            onChangeText={(text) => setFormData({ ...formData, supplier: text })}
-            placeholder="Supplier name"
-            placeholderTextColor={colors.inactive}
-          />
-          {errors.supplier && (
-            <Text style={[styles.errorText, { color: colors.error }]}>{errors.supplier}</Text>
-          )}
-        </View>
-
-        <View style={styles.row}>
-          <View style={[styles.formGroup, styles.halfWidth]}>
-            <Text style={[styles.label, { color: colors.text }]}>Current Stock</Text>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
+          <View style={styles.formGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Name</Text>
             <TextInput
               style={[
                 styles.input,
                 { 
                   backgroundColor: colors.lightGray,
                   color: colors.text,
-                  borderColor: errors.currentStock ? colors.error : colors.border
+                  borderColor: errors.name ? colors.error : colors.border
                 }
               ]}
-              value={formData.currentStock?.toString()}
-              onChangeText={(text) => setFormData({ ...formData, currentStock: parseInt(text) || 0 })}
-              keyboardType="numeric"
-              placeholder="0"
+              value={formData.name}
+              onChangeText={(text) => setFormData({ ...formData, name: text })}
+              placeholder="Product name"
               placeholderTextColor={colors.inactive}
             />
-            {errors.currentStock && (
-              <Text style={[styles.errorText, { color: colors.error }]}>{errors.currentStock}</Text>
+            {errors.name && (
+              <Text style={[styles.errorText, { color: colors.error }]}>{errors.name}</Text>
             )}
           </View>
 
-          <View style={[styles.formGroup, styles.halfWidth]}>
-            <Text style={[styles.label, { color: colors.text }]}>Minimum Stock</Text>
+          <View style={styles.formGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Description</Text>
             <TextInput
               style={[
                 styles.input,
+                styles.textArea,
                 { 
                   backgroundColor: colors.lightGray,
                   color: colors.text,
-                  borderColor: errors.minStock ? colors.error : colors.border
+                  borderColor: errors.description ? colors.error : colors.border
                 }
               ]}
-              value={formData.minStock?.toString()}
-              onChangeText={(text) => setFormData({ ...formData, minStock: parseInt(text) || 0 })}
-              keyboardType="numeric"
-              placeholder="0"
+              value={formData.description}
+              onChangeText={(text) => setFormData({ ...formData, description: text })}
+              placeholder="Product description"
               placeholderTextColor={colors.inactive}
+              multiline
+              numberOfLines={4}
             />
-            {errors.minStock && (
-              <Text style={[styles.errorText, { color: colors.error }]}>{errors.minStock}</Text>
-            )}
           </View>
-        </View>
 
-        <View style={styles.row}>
-          <View style={[styles.formGroup, styles.halfWidth]}>
-            <Text style={[styles.label, { color: colors.text }]}>Cost</Text>
+          <View style={styles.formGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Barcode</Text>
             <TextInput
               style={[
                 styles.input,
                 { 
                   backgroundColor: colors.lightGray,
                   color: colors.text,
-                  borderColor: errors.cost ? colors.error : colors.border
+                  borderColor: errors.barcode ? colors.error : colors.border
                 }
               ]}
-              value={formData.cost?.toString()}
-              onChangeText={(text) => {
-                const cost = parseFloat(text) || 0;
-                setFormData({ 
-                  ...formData, 
-                  cost,
-                  price: Math.round((cost * 1.3) * 100) / 100 // 30% markup
-                });
-              }}
-              keyboardType="numeric"
-              placeholder="0.00"
+              value={formData.barcode}
+              onChangeText={(text) => setFormData({ ...formData, barcode: text })}
+              placeholder="Product barcode"
               placeholderTextColor={colors.inactive}
             />
-            {errors.cost && (
-              <Text style={[styles.errorText, { color: colors.error }]}>{errors.cost}</Text>
+            {errors.barcode && (
+              <Text style={[styles.errorText, { color: colors.error }]}>{errors.barcode}</Text>
             )}
           </View>
 
-          <View style={[styles.formGroup, styles.halfWidth]}>
-            <Text style={[styles.label, { color: colors.text }]}>Unit</Text>
+          <View style={styles.formGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Category</Text>
             <TextInput
               style={[
                 styles.input,
                 { 
                   backgroundColor: colors.lightGray,
                   color: colors.text,
-                  borderColor: errors.unit ? colors.error : colors.border
+                  borderColor: errors.category ? colors.error : colors.border
                 }
               ]}
-              value={formData.unit}
-              onChangeText={(text) => setFormData({ ...formData, unit: text })}
-              placeholder="each, box, etc."
+              value={formData.category}
+              onChangeText={(text) => setFormData({ ...formData, category: text })}
+              placeholder="Product category"
               placeholderTextColor={colors.inactive}
             />
           </View>
-        </View>
-      </ScrollView>
-    </View>
+
+          <View style={styles.formGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Supplier</Text>
+            <TextInput
+              style={[
+                styles.input,
+                { 
+                  backgroundColor: colors.lightGray,
+                  color: colors.text,
+                  borderColor: errors.supplier ? colors.error : colors.border
+                }
+              ]}
+              value={formData.supplier}
+              onChangeText={(text) => setFormData({ ...formData, supplier: text })}
+              placeholder="Supplier name"
+              placeholderTextColor={colors.inactive}
+            />
+            {errors.supplier && (
+              <Text style={[styles.errorText, { color: colors.error }]}>{errors.supplier}</Text>
+            )}
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.formGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Current Stock</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { 
+                    backgroundColor: colors.lightGray,
+                    color: colors.text,
+                    borderColor: errors.currentStock ? colors.error : colors.border
+                  }
+                ]}
+                value={formData.currentStock?.toString()}
+                onChangeText={(text) => setFormData({ ...formData, currentStock: parseInt(text) || 0 })}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={colors.inactive}
+              />
+              {errors.currentStock && (
+                <Text style={[styles.errorText, { color: colors.error }]}>{errors.currentStock}</Text>
+              )}
+            </View>
+
+            <View style={[styles.formGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Minimum Stock</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { 
+                    backgroundColor: colors.lightGray,
+                    color: colors.text,
+                    borderColor: errors.minStock ? colors.error : colors.border
+                  }
+                ]}
+                value={formData.minStock?.toString()}
+                onChangeText={(text) => setFormData({ ...formData, minStock: parseInt(text) || 0 })}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={colors.inactive}
+              />
+              {errors.minStock && (
+                <Text style={[styles.errorText, { color: colors.error }]}>{errors.minStock}</Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.formGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Cost</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { 
+                    backgroundColor: colors.lightGray,
+                    color: colors.text,
+                    borderColor: errors.cost ? colors.error : colors.border
+                  }
+                ]}
+                value={formData.cost?.toString()}
+                onChangeText={(text) => {
+                  const cost = parseFloat(text) || 0;
+                  setFormData({ 
+                    ...formData, 
+                    cost,
+                    price: Math.round((cost * 1.3) * 100) / 100 // 30% markup
+                  });
+                }}
+                keyboardType="numeric"
+                placeholder="0.00"
+                placeholderTextColor={colors.inactive}
+              />
+              {errors.cost && (
+                <Text style={[styles.errorText, { color: colors.error }]}>{errors.cost}</Text>
+              )}
+            </View>
+
+            <View style={[styles.formGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Unit</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { 
+                    backgroundColor: colors.lightGray,
+                    color: colors.text,
+                    borderColor: errors.unit ? colors.error : colors.border
+                  }
+                ]}
+                value={formData.unit}
+                onChangeText={(text) => setFormData({ ...formData, unit: text })}
+                placeholder="each, box, etc."
+                placeholderTextColor={colors.inactive}
+              />
+            </View>
+          </View>
+
+          {/* Add extra padding at bottom for keyboard */}
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -299,7 +320,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 60 : 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
   },

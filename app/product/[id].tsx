@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Edit, ArrowLeft, Package, AlertTriangle, Clock } from 'lucide-react-native';
+import { Edit, ArrowLeft, Package, AlertTriangle, Clock, ShoppingBag, ClipboardList } from 'lucide-react-native';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useThemeStore } from '@/store/themeStore';
 import { formatDistanceToNow } from '@/utils/dateUtils';
@@ -10,7 +10,7 @@ export default function ProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useThemeStore();
-  const { products } = useInventoryStore();
+  const { products, addToOrder, addToStocktake } = useInventoryStore();
   
   const product = products.find(p => p.id === id);
   
@@ -23,6 +23,16 @@ export default function ProductScreen() {
   }
 
   const isLowStock = product.currentStock < product.minStock;
+
+  const handleAddToOrder = () => {
+    addToOrder(product, 1);
+    router.push('/');
+  };
+
+  const handleStocktake = () => {
+    addToStocktake(product, product.currentStock);
+    router.push('/stocktake');
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -109,16 +119,36 @@ export default function ProductScreen() {
           </View>
         </View>
 
-        <View style={styles.adminActionsContainer}>
+        <View style={styles.actionsContainer}>
           <TouchableOpacity 
-            style={[styles.adminActionButton, { 
+            style={[styles.actionButton, { backgroundColor: colors.primary }]}
+            onPress={handleAddToOrder}
+          >
+            <ShoppingBag size={20} color={colors.background} />
+            <Text style={[styles.actionButtonText, { color: colors.background }]}>
+              Add to Order
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.actionButton, { backgroundColor: colors.secondary }]}
+            onPress={handleStocktake}
+          >
+            <ClipboardList size={20} color={colors.background} />
+            <Text style={[styles.actionButtonText, { color: colors.background }]}>
+              Stocktake
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.editButton, { 
               backgroundColor: colors.lightGray, 
               borderColor: colors.border 
             }]}
             onPress={() => router.push(`/product/edit/${id}`)}
           >
             <Edit size={20} color={colors.text} />
-            <Text style={[styles.adminActionText, { color: colors.text }]}>Edit Product</Text>
+            <Text style={[styles.editButtonText, { color: colors.text }]}>Edit Product</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -241,18 +271,31 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-  adminActionsContainer: {
-    flexDirection: 'row',
+  actionsContainer: {
     marginBottom: 32,
+    gap: 12,
   },
-  adminActionButton: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  adminActionText: {
+  editButtonText: {
     marginLeft: 8,
     fontSize: 16,
     fontWeight: '500',

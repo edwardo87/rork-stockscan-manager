@@ -21,6 +21,7 @@ interface InventoryState {
   setProducts: (products: Product[]) => void;
   getProductByBarcode: (barcode: string) => Product | undefined;
   updateProductStock: (productId: string, newStock: number) => void;
+  updateProduct: (productId: string, updatedProduct: Product) => void;
   
   // Order Management
   addToOrder: (product: Product, quantity: number) => void;
@@ -59,6 +60,14 @@ export const useInventoryStore = create<InventoryState>()(
         products: state.products.map(product =>
           product.id === productId
             ? { ...product, currentStock: newStock }
+            : product
+        )
+      })),
+
+      updateProduct: (productId, updatedProduct) => set((state) => ({
+        products: state.products.map(product =>
+          product.id === productId
+            ? { ...product, ...updatedProduct }
             : product
         )
       })),

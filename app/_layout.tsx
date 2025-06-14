@@ -7,7 +7,8 @@ import { StatusBar } from "expo-status-bar";
 import { useThemeStore } from "@/store/themeStore";
 import { Appearance } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { trpc, trpcClient } from "@/lib/trpc";
+import { httpBatchLink } from "@trpc/client";
+import { trpc } from "@/lib/trpc";
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
@@ -18,6 +19,14 @@ SplashScreen.preventAutoHideAsync();
 
 // Create a client
 const queryClient = new QueryClient();
+
+const trpcClient = trpc.createClient({
+  links: [
+    httpBatchLink({
+      url: `${process.env.EXPO_PUBLIC_RORK_API_BASE_URL}/api/trpc`,
+    }),
+  ],
+});
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({

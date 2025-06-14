@@ -114,6 +114,13 @@ function RootLayoutNav() {
             headerShown: false,
           }} 
         />
+        <Stack.Screen 
+          name="po-preview" 
+          options={{ 
+            title: "PO Preview",
+            presentation: "card",
+          }} 
+        />
       </Stack>
     </>
   );

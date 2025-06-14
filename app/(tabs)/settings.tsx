@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Info, Wrench } from 'lucide-react-native';
+import { Info, Wrench, FileText } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { trpcClient } from '@/lib/trpc';
@@ -185,6 +185,23 @@ export default function SettingsScreen() {
             </View>
           </View>
         </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.settingRow, { borderTopColor: colors.border }]}
+          onPress={() => router.push('/po-preview')}
+        >
+          <View style={styles.settingInfo}>
+            <FileText size={22} color={colors.text} style={styles.settingIcon} />
+            <View>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>
+                PO Preview
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                View latest purchase order
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
       </View>
 
       {/* Version Info */}
@@ -205,51 +222,3 @@ export default function SettingsScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  section: {
-    marginTop: 16,
-    marginHorizontal: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    padding: 16,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderTopWidth: 1,
-  },
-  settingInfo: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flex: 1,
-    paddingRight: 16,
-  },
-  settingIcon: {
-    marginRight: 12,
-    width: 22,
-    height: 22,
-  },
-  settingTextContainer: {
-    flex: 1,
-  },
-  settingLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 6,
-  },
-  settingDescription: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-});

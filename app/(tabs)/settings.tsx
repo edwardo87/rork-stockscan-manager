@@ -17,26 +17,17 @@ export default function SettingsScreen() {
       if (result.success) {
         Alert.alert(
           "✅ Environment Check Passed",
-          "All required environment variables are properly configured:
-
-" +
-          "• GOOGLE_SERVICE_ACCOUNT_EMAIL
-" +
-          "• GOOGLE_PRIVATE_KEY
-" +
+          "All required environment variables are properly configured:\n\n" +
+          "• GOOGLE_SERVICE_ACCOUNT_EMAIL\n" +
+          "• GOOGLE_PRIVATE_KEY\n" +
           "• GOOGLE_SHEET_ID",
           [{ text: "OK" }]
         );
       } else {
-        const missingVars = result.missingVariables.join('
-• ');
+        const missingVars = result.missingVariables.join('\n• ');
         Alert.alert(
           "❌ Environment Check Failed",
-          `The following environment variables are missing:
-
-• ${missingVars}
-
-Please check your environment configuration.`,
+          `The following environment variables are missing:\n\n• ${missingVars}\n\nPlease check your environment configuration.`,
           [{ text: "OK" }]
         );
       }

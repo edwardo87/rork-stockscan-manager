@@ -20,6 +20,7 @@ SplashScreen.preventAutoHideAsync();
 // Create a client
 const queryClient = new QueryClient();
 
+// Initialize tRPC client
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({

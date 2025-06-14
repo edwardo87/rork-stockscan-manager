@@ -14,3 +14,6 @@ export const appRouter = createTRPCRouter({
     env: testEnvRoute,
   }),
 });
+
+// Export type router type
+export type AppRouter = typeof appRouter;

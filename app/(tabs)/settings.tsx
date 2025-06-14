@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, ActivityIndicator } from 'react-native';
-import { Moon, Sun, Bell, Palette, CheckCircle, AlertTriangle, Settings as SettingsIcon, Tool } from 'lucide-react-native';
+import { Moon, Sun, Bell, Palette, CheckCircle, AlertTriangle, Settings as SettingsIcon, Wrench } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { trpcClient } from '@/lib/trpc';
 
@@ -121,7 +121,7 @@ export default function SettingsScreen() {
         
         <TouchableOpacity style={[styles.settingRow, { borderTopColor: colors.border }]}>
           <View style={styles.settingInfo}>
-            <Tool size={22} color={colors.text} style={styles.settingIcon} />
+            <Wrench size={22} color={colors.text} style={styles.settingIcon} />
             <View>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Import Data

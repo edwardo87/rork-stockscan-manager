@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Moon, Sun, Bell, Info, Wrench } from 'lucide-react-native';
+import { Moon, Sun, Info, Wrench } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { trpcClient } from '@/lib/trpc';
@@ -88,7 +88,7 @@ export default function SettingsScreen() {
         
         <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
           <View style={styles.settingInfo}>
-            <View>
+            <View style={styles.settingTextContainer}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Low Stock Alerts
               </Text>
@@ -106,7 +106,7 @@ export default function SettingsScreen() {
 
         <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
           <View style={styles.settingInfo}>
-            <View>
+            <View style={styles.settingTextContainer}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Order Updates
               </Text>
@@ -124,8 +124,7 @@ export default function SettingsScreen() {
 
         <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
           <View style={styles.settingInfo}>
-            <Bell size={22} color={colors.text} style={styles.settingIcon} />
-            <View>
+            <View style={styles.settingTextContainer}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Recently Ordered Items
               </Text>
@@ -245,6 +244,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
     width: 22,
     height: 22,
+  },
+  settingTextContainer: {
+    flex: 1,
+    paddingTop: 2,
   },
   settingLabel: {
     fontSize: 16,

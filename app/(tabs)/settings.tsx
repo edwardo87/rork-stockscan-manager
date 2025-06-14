@@ -111,7 +111,7 @@ export default function SettingsScreen() {
                 Order Updates
               </Text>
               <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Track your order status
+                Track order status
               </Text>
             </View>
           </View>
@@ -126,7 +126,7 @@ export default function SettingsScreen() {
           <View style={styles.settingInfo}>
             <View style={styles.settingTextContainer}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
-                Recently Ordered Items
+                Recently Ordered
               </Text>
               <Text style={[styles.settingDescription, { color: colors.inactive }]}>
                 See orders from last 48h
@@ -247,7 +247,6 @@ const styles = StyleSheet.create({
   },
   settingTextContainer: {
     flex: 1,
-    paddingTop: 2,
   },
   settingLabel: {
     fontSize: 16,

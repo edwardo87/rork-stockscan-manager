@@ -6,6 +6,7 @@ import { products as mockProducts } from '@/mocks/products';
 import { suppliers as mockSuppliers } from '@/mocks/suppliers';
 import { trpcClient } from '@/lib/trpc';
 import { Alert } from 'react-native';
+import { useNotificationsStore } from './notificationsStore';
 
 interface InventoryState {
   products: Product[];
@@ -19,6 +20,7 @@ interface InventoryState {
   // Product Management
   setProducts: (products: Product[]) => void;
   getProductByBarcode: (barcode: string) => Product | undefined;
+  updateProductStock: (productId: string, newStock: number) => void;
   
   // Order Management
   addToOrder: (product: Product, quantity: number) => void;
@@ -52,6 +54,14 @@ export const useInventoryStore = create<InventoryState>()(
       getProductByBarcode: (barcode) => {
         return get().products.find(p => p.barcode === barcode);
       },
+
+      updateProductStock: (productId, newStock) => set((state) => ({
+        products: state.products.map(product =>
+          product.id === productId
+            ? { ...product, currentStock: newStock }
+            : product
+        )
+      })),
 
       addToOrder: (product, quantity) => set((state) => {
         const existingItem = state.currentOrderItems.find(item => item.productId === product.id);
@@ -124,52 +134,38 @@ export const useInventoryStore = create<InventoryState>()(
             items: state.currentOrderItems
           });
 
-          // Show detailed response for debugging
-          Alert.alert(
-            "Order Submission Result",
-            `Backend Response:
-${JSON.stringify(response, null, 2)}`,
-            [
-              { 
-                text: "OK", 
-                onPress: () => {
-                  if (response.success) {
-                    // Only update state and navigate if successful
-                    const now = new Date().toISOString();
-                    const updatedProducts = state.products.map(product => {
-                      const isInOrder = state.currentOrderItems.some(item => item.productId === product.id);
-                      return isInOrder ? { ...product, lastOrdered: now } : product;
-                    });
-                    
-                    set({
-                      purchaseOrders: [...state.purchaseOrders, ...newOrders],
-                      currentOrderItems: [],
-                      products: updatedProducts,
-                      isLoading: false
-                    });
-                  }
-                }
-              }
-            ]
-          );
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Failed to submit order';
-          
-          // Show detailed error for debugging
-          Alert.alert(
-            "Order Submission Error",
-            `Error Details:
-${errorMessage}
+          // Show notification if enabled
+          if (useNotificationsStore.getState().orderUpdates) {
+            Alert.alert(
+              "Order Submitted",
+              "Your order has been successfully submitted.",
+              [{ text: "OK" }]
+            );
+          }
 
-Full Error:
-${JSON.stringify(error, null, 2)}`,
-            [{ text: "OK" }]
-          );
-          
-          set({ 
-            error: errorMessage,
+          // Update product stock levels
+          const updatedProducts = state.products.map(product => {
+            const orderItem = state.currentOrderItems.find(item => item.productId === product.id);
+            if (orderItem) {
+              return {
+                ...product,
+                lastOrdered: new Date().toISOString(),
+                currentStock: product.currentStock + orderItem.quantity
+              };
+            }
+            return product;
+          });
+
+          set({
+            purchaseOrders: [...state.purchaseOrders, ...newOrders],
+            currentOrderItems: [],
+            products: updatedProducts,
             isLoading: false
           });
+
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to submit order';
+          set({ error: errorMessage, isLoading: false });
           throw error;
         }
       },
@@ -217,9 +213,18 @@ ${JSON.stringify(error, null, 2)}`,
         const updatedProducts = state.products.map(product => {
           const stocktakeItem = state.currentStocktakeItems.find(item => item.productId === product.id);
           if (stocktakeItem) {
+            // Check if stock is low after update
+            const newStock = stocktakeItem.actualQuantity;
+            if (useNotificationsStore.getState().lowStockAlerts && newStock < product.minStock) {
+              Alert.alert(
+                "Low Stock Alert",
+                `${product.name} is below minimum stock level (${newStock} < ${product.minStock})`,
+                [{ text: "OK" }]
+              );
+            }
             return {
               ...product,
-              currentStock: stocktakeItem.actualQuantity
+              currentStock: newStock
             };
           }
           return product;
@@ -227,7 +232,7 @@ ${JSON.stringify(error, null, 2)}`,
         
         return {
           products: updatedProducts,
-          currentStocktakeItems: [] // Clear stocktake after submission
+          currentStocktakeItems: []
         };
       }),
 

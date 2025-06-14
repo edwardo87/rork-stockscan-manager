@@ -1,15 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   StyleSheet, 
   View, 
   Text, 
   TouchableOpacity,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableWithoutFeedback,
-  Keyboard,
-  Alert
+  Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Edit, ShoppingBag, ClipboardList, AlertTriangle, Clock } from 'lucide-react-native';
@@ -21,7 +17,7 @@ export default function ProductScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { colors } = useThemeStore();
-  const { products, getProductByBarcode, addToOrder, addToStocktake } = useInventoryStore();
+  const { products, addToOrder, addToStocktake } = useInventoryStore();
   
   const product = products.find(p => p.id === id);
   
@@ -66,126 +62,118 @@ export default function ProductScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+    <ScrollView 
+      style={[styles.scrollView, { backgroundColor: colors.background }]}
+      showsVerticalScrollIndicator={false}
     >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <ScrollView 
-          style={[styles.scrollView, { backgroundColor: colors.background }]}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.content}>
-            {/* Header Section */}
-            <View style={styles.header}>
-              <View>
-                <Text style={[styles.name, { color: colors.text }]}>{product.name}</Text>
-                <Text style={[styles.sku, { color: colors.inactive }]}>{product.sku}</Text>
-              </View>
-              <TouchableOpacity 
-                style={[styles.editButton, { backgroundColor: colors.lightGray }]}
-                onPress={() => router.push(`/product/edit/${id}`)}
-              >
-                <Edit size={20} color={colors.primary} />
-                <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit</Text>
-              </TouchableOpacity>
-            </View>
+      <View style={styles.content}>
+        {/* Header Section */}
+        <View style={styles.header}>
+          <View>
+            <Text style={[styles.name, { color: colors.text }]}>{product.name}</Text>
+            <Text style={[styles.sku, { color: colors.inactive }]}>{product.sku}</Text>
+          </View>
+          <TouchableOpacity 
+            style={[styles.editButton, { backgroundColor: colors.lightGray }]}
+            onPress={() => router.push(`/product/edit/${id}`)}
+          >
+            <Edit size={20} color={colors.primary} />
+            <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit</Text>
+          </TouchableOpacity>
+        </View>
 
-            {/* Stock Status */}
-            <View style={[styles.stockStatus, { backgroundColor: colors.lightGray }]}>
-              <View style={styles.stockInfo}>
-                <Text style={[styles.stockLabel, { color: colors.inactive }]}>Current Stock:</Text>
-                <Text style={[
-                  styles.stockValue, 
-                  isLowStock ? { color: colors.warning } : { color: colors.success }
-                ]}>
-                  {product.currentStock} {product.unit}
-                </Text>
-              </View>
-              {isLowStock && (
-                <View style={styles.warningContainer}>
-                  <AlertTriangle size={16} color={colors.warning} />
-                  <Text style={[styles.warningText, { color: colors.warning }]}>
-                    Below minimum ({product.minStock})
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* Details Section */}
-            <View style={[styles.section, { borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Details</Text>
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.inactive }]}>Category:</Text>
-                <Text style={[styles.detailValue, { color: colors.text }]}>{product.category}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.inactive }]}>Supplier:</Text>
-                <Text style={[styles.detailValue, { color: colors.text }]}>{product.supplier}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.inactive }]}>Barcode:</Text>
-                <Text style={[styles.detailValue, { color: colors.text }]}>{product.barcode}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.inactive }]}>Price:</Text>
-                <Text style={[styles.detailValue, { color: colors.text }]}>
-                  ${product.price.toFixed(2)}
-                </Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.inactive }]}>Cost:</Text>
-                <Text style={[styles.detailValue, { color: colors.text }]}>
-                  ${product.cost.toFixed(2)}
-                </Text>
-              </View>
-            </View>
-
-            {/* Description Section */}
-            <View style={[styles.section, { borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
-              <Text style={[styles.description, { color: colors.text }]}>
-                {product.description}
+        {/* Stock Status */}
+        <View style={[styles.stockStatus, { backgroundColor: colors.lightGray }]}>
+          <View style={styles.stockInfo}>
+            <Text style={[styles.stockLabel, { color: colors.inactive }]}>Current Stock:</Text>
+            <Text style={[
+              styles.stockValue, 
+              isLowStock ? { color: colors.warning } : { color: colors.success }
+            ]}>
+              {product.currentStock} {product.unit}
+            </Text>
+          </View>
+          {isLowStock && (
+            <View style={styles.warningContainer}>
+              <AlertTriangle size={16} color={colors.warning} />
+              <Text style={[styles.warningText, { color: colors.warning }]}>
+                Below minimum ({product.minStock})
               </Text>
             </View>
+          )}
+        </View>
 
-            {/* Last Ordered Info */}
-            {product.lastOrdered && (
-              <View style={styles.lastOrdered}>
-                <Clock size={14} color={colors.inactive} />
-                <Text style={[styles.lastOrderedText, { color: colors.inactive }]}>
-                  Last ordered: {formatDistanceToNow(new Date(product.lastOrdered))}
-                </Text>
-              </View>
-            )}
-
-            {/* Action Buttons */}
-            <View style={styles.actionButtons}>
-              <TouchableOpacity 
-                style={[styles.actionButton, { backgroundColor: colors.primary }]}
-                onPress={handleAddToOrder}
-              >
-                <ShoppingBag size={20} color={colors.background} />
-                <Text style={[styles.actionButtonText, { color: colors.background }]}>
-                  Add to Order
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.actionButton, { backgroundColor: colors.secondary }]}
-                onPress={handleAddToStocktake}
-              >
-                <ClipboardList size={20} color={colors.background} />
-                <Text style={[styles.actionButtonText, { color: colors.background }]}>
-                  Add to Stocktake
-                </Text>
-              </TouchableOpacity>
-            </View>
+        {/* Details Section */}
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Details</Text>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.inactive }]}>Category:</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>{product.category}</Text>
           </View>
-        </ScrollView>
-      </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.inactive }]}>Supplier:</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>{product.supplier}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.inactive }]}>Barcode:</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>{product.barcode}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.inactive }]}>Price:</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>
+              ${product.price.toFixed(2)}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.inactive }]}>Cost:</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>
+              ${product.cost.toFixed(2)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Description Section */}
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
+          <Text style={[styles.description, { color: colors.text }]}>
+            {product.description}
+          </Text>
+        </View>
+
+        {/* Last Ordered Info */}
+        {product.lastOrdered && (
+          <View style={styles.lastOrdered}>
+            <Clock size={14} color={colors.inactive} />
+            <Text style={[styles.lastOrderedText, { color: colors.inactive }]}>
+              Last ordered: {formatDistanceToNow(new Date(product.lastOrdered))}
+            </Text>
+          </View>
+        )}
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            style={[styles.actionButton, { backgroundColor: colors.primary }]}
+            onPress={handleAddToOrder}
+          >
+            <ShoppingBag size={20} color={colors.background} />
+            <Text style={[styles.actionButtonText, { color: colors.background }]}>
+              Add to Order
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.actionButton, { backgroundColor: colors.secondary }]}
+            onPress={handleAddToStocktake}
+          >
+            <ClipboardList size={20} color={colors.background} />
+            <Text style={[styles.actionButtonText, { color: colors.background }]}>
+              Add to Stocktake
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 

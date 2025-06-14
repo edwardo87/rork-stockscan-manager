@@ -3,13 +3,22 @@ import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, T
 import { useRouter } from 'expo-router';
 import { Moon, Sun, Bell, Info, Wrench } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
+import { useNotificationsStore } from '@/store/notificationsStore';
 import { trpcClient } from '@/lib/trpc';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { colors, theme, toggleTheme } = useThemeStore();
   const [isTestingEnv, setIsTestingEnv] = useState(false);
-  const [notifications, setNotifications] = useState(true);
+  
+  const {
+    lowStockAlerts,
+    orderUpdates,
+    recentlyOrdered,
+    toggleLowStockAlerts,
+    toggleOrderUpdates,
+    toggleRecentlyOrdered,
+  } = useNotificationsStore();
   
   const testEnvironment = async () => {
     try {
@@ -77,27 +86,62 @@ export default function SettingsScreen() {
       <View style={[styles.section, { backgroundColor: colors.background }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Notifications</Text>
         
-        <TouchableOpacity 
-          style={[styles.settingRow, { borderTopColor: colors.border }]}
-          onPress={() => setNotifications(!notifications)}
-        >
+        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
           <View style={styles.settingInfo}>
             <Bell size={22} color={colors.text} style={styles.settingIcon} />
             <View>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
-                Push Notifications
+                Low Stock Alerts
               </Text>
               <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Low stock alerts and order updates
+                Get notified when stock levels drop below minimum
               </Text>
             </View>
           </View>
           <Switch 
-            value={notifications}
-            onValueChange={setNotifications}
+            value={lowStockAlerts}
+            onValueChange={toggleLowStockAlerts}
             trackColor={{ false: colors.lightGray, true: colors.primary }}
           />
-        </TouchableOpacity>
+        </View>
+
+        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
+          <View style={styles.settingInfo}>
+            <Bell size={22} color={colors.text} style={styles.settingIcon} />
+            <View>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>
+                Order Updates
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                Get confirmation and tracking for your submitted orders
+              </Text>
+            </View>
+          </View>
+          <Switch 
+            value={orderUpdates}
+            onValueChange={toggleOrderUpdates}
+            trackColor={{ false: colors.lightGray, true: colors.primary }}
+          />
+        </View>
+
+        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
+          <View style={styles.settingInfo}>
+            <Bell size={22} color={colors.text} style={styles.settingIcon} />
+            <View>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>
+                Recently Ordered Items
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                Be reminded of what was recently reordered
+              </Text>
+            </View>
+          </View>
+          <Switch 
+            value={recentlyOrdered}
+            onValueChange={toggleRecentlyOrdered}
+            trackColor={{ false: colors.lightGray, true: colors.primary }}
+          />
+        </View>
       </View>
 
       {/* About Section */}
@@ -195,8 +239,9 @@ const styles = StyleSheet.create({
   },
   settingInfo: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     flex: 1,
+    paddingRight: 16,
   },
   settingIcon: {
     marginRight: 12,
@@ -210,5 +255,6 @@ const styles = StyleSheet.create({
   },
   settingDescription: {
     fontSize: 13,
+    lineHeight: 18,
   },
 });

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Moon, Sun, Info, Wrench } from 'lucide-react-native';
+import { Info, Wrench } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { trpcClient } from '@/lib/trpc';
@@ -19,7 +19,7 @@ export default function SettingsScreen() {
     toggleOrderUpdates,
     toggleRecentlyOrdered,
   } = useNotificationsStore();
-  
+
   const testEnvironment = async () => {
     try {
       setIsTestingEnv(true);
@@ -60,12 +60,7 @@ export default function SettingsScreen() {
           onPress={toggleTheme}
         >
           <View style={styles.settingInfo}>
-            {theme === 'dark' ? (
-              <Moon size={22} color={colors.text} style={styles.settingIcon} />
-            ) : (
-              <Sun size={22} color={colors.text} style={styles.settingIcon} />
-            )}
-            <View>
+            <View style={styles.settingTextContainer}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Dark Mode
               </Text>
@@ -93,7 +88,7 @@ export default function SettingsScreen() {
                 Low Stock Alerts
               </Text>
               <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Alert when stock runs low
+                Get notified when items run low
               </Text>
             </View>
           </View>
@@ -111,7 +106,7 @@ export default function SettingsScreen() {
                 Order Updates
               </Text>
               <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Track order status
+                Get notified about order status changes
               </Text>
             </View>
           </View>
@@ -129,7 +124,7 @@ export default function SettingsScreen() {
                 Recently Ordered
               </Text>
               <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                See orders from last 48h
+                Show orders from last 48 hours
               </Text>
             </View>
           </View>

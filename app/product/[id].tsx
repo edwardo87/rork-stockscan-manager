@@ -118,7 +118,7 @@ export default function ProductScreen() {
             onPress={() => router.push(`/product/edit/${id}`)}
           >
             <Edit size={20} color={colors.text} />
-            <Text style={[styles.adminActionText, { color: colors.text }]}>Edit</Text>
+            <Text style={[styles.adminActionText, { color: colors.text }]}>Edit Product</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

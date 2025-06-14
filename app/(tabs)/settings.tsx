@@ -88,12 +88,11 @@ export default function SettingsScreen() {
         
         <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
           <View style={styles.settingInfo}>
-            <Bell size={22} color={colors.text} style={styles.settingIcon} />
             <View>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Low Stock Alerts
               </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive, marginTop: 4 }]}>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
                 Alert when stock runs low
               </Text>
             </View>
@@ -107,13 +106,12 @@ export default function SettingsScreen() {
 
         <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
           <View style={styles.settingInfo}>
-            <Bell size={22} color={colors.text} style={styles.settingIcon} />
             <View>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Order Updates
               </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive, marginTop: 4 }]}>
-                Track order status
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                Track your order status
               </Text>
             </View>
           </View>
@@ -131,7 +129,7 @@ export default function SettingsScreen() {
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Recently Ordered Items
               </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive, marginTop: 4 }]}>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
                 See orders from last 48h
               </Text>
             </View>
@@ -251,7 +249,7 @@ const styles = StyleSheet.create({
   settingLabel: {
     fontSize: 16,
     fontWeight: '500',
-    marginBottom: 2,
+    marginBottom: 6,
   },
   settingDescription: {
     fontSize: 13,

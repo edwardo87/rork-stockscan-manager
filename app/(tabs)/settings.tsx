@@ -93,8 +93,8 @@ export default function SettingsScreen() {
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Low Stock Alerts
               </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Alert when items are running low
+              <Text style={[styles.settingDescription, { color: colors.inactive, marginTop: 4 }]}>
+                Alert when stock runs low
               </Text>
             </View>
           </View>
@@ -112,8 +112,8 @@ export default function SettingsScreen() {
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Order Updates
               </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Track order status and confirmations
+              <Text style={[styles.settingDescription, { color: colors.inactive, marginTop: 4 }]}>
+                Track order status
               </Text>
             </View>
           </View>
@@ -131,8 +131,8 @@ export default function SettingsScreen() {
               <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Recently Ordered Items
               </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                See what was ordered in last 48h
+              <Text style={[styles.settingDescription, { color: colors.inactive, marginTop: 4 }]}>
+                See orders from last 48h
               </Text>
             </View>
           </View>

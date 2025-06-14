@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, ActivityIndicator } from 'react-native';
-import { Moon, Sun, Bell, Palette, CheckCircle, AlertTriangle, Settings as SettingsIcon, Wrench } from 'lucide-react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, ActivityIndicator, Linking } from 'react-native';
+import { Moon, Sun, Bell, Palette, CheckCircle, AlertTriangle, Settings as SettingsIcon, Wrench, Mail, Globe } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { trpcClient } from '@/lib/trpc';
+import SmartStockLogo from '@/components/SmartStockLogo';
 
 export default function SettingsScreen() {
   const { colors, theme, toggleTheme } = useThemeStore();
@@ -42,8 +43,77 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleEmailPress = () => {
+    Linking.openURL('mailto:smartstock.app@gmail.com');
+  };
+
+  const handleWebsitePress = () => {
+    Alert.alert(
+      "Coming Soon",
+      "The SmartStock website will be available soon!",
+      [{ text: "OK" }]
+    );
+  };
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.lightGray }]}>
+      {/* About Section */}
+      <View style={[styles.section, { backgroundColor: colors.background }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>About SmartStock</Text>
+        
+        <View style={styles.aboutHeader}>
+          <SmartStockLogo size="large" />
+          <Text style={[styles.tagline, { color: colors.text }]}>
+            Smarter Stock. Simpler Workdays.
+          </Text>
+        </View>
+
+        <Text style={[styles.description, { color: colors.inactive }]}>
+          Running a business is hard enough without chasing missing parts or drowning in spreadsheets. That's why we built SmartStock — a sleek, powerful inventory tool designed for businesses that don't have time to waste.
+        </Text>
+
+        <Text style={[styles.subheading, { color: colors.text }]}>Why We Built It</Text>
+        <Text style={[styles.description, { color: colors.inactive }]}>
+          After 20 years managing inventory across factories, warehouses, and job sites, we saw the same problems over and over:
+        </Text>
+        <View style={styles.bulletPoints}>
+          <Text style={[styles.bulletPoint, { color: colors.error }]}>❌ Stockouts at the worst time</Text>
+          <Text style={[styles.bulletPoint, { color: colors.error }]}>❌ Over-ordering just to be "safe"</Text>
+          <Text style={[styles.bulletPoint, { color: colors.error }]}>❌ Reordering systems that don't... work</Text>
+        </View>
+
+        <Text style={[styles.subheading, { color: colors.text }]}>Key Features That Just Work:</Text>
+        <View style={styles.bulletPoints}>
+          <Text style={[styles.bulletPoint, { color: colors.primary }]}>🔹 Scan & Reorder with QR or Barcode</Text>
+          <Text style={[styles.bulletPoint, { color: colors.primary }]}>🔹 Live Inventory Visibility via Google Sheets</Text>
+          <Text style={[styles.bulletPoint, { color: colors.primary }]}>🔹 Set Min Stock Alerts</Text>
+          <Text style={[styles.bulletPoint, { color: colors.primary }]}>🔹 Track Orders in One Tap</Text>
+          <Text style={[styles.bulletPoint, { color: colors.primary }]}>🔹 Works Offline, syncs when you're back online</Text>
+        </View>
+
+        <Text style={[styles.subheading, { color: colors.text }]}>A Word from the Founder</Text>
+        <View style={[styles.quote, { backgroundColor: colors.lightGray }]}>
+          <Text style={[styles.quoteText, { color: colors.text }]}>
+            "I didn't create SmartStock to get rich. I created it because I was sick of seeing good businesses fall behind because their systems couldn't keep up. SmartStock helps level the playing field — and that's something I'm proud to stand behind."
+          </Text>
+        </View>
+
+        <Text style={[styles.subheading, { color: colors.text }]}>Support & Contact</Text>
+        <TouchableOpacity style={styles.contactRow} onPress={handleEmailPress}>
+          <Mail size={20} color={colors.primary} />
+          <Text style={[styles.contactText, { color: colors.primary }]}>
+            smartstock.app@gmail.com
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.contactRow} onPress={handleWebsitePress}>
+          <Globe size={20} color={colors.primary} />
+          <Text style={[styles.contactText, { color: colors.primary }]}>
+            www.smartstock.ai (coming soon)
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Appearance Section */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Appearance</Text>
         
@@ -90,6 +160,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Notifications Section */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Notifications</Text>
         
@@ -116,24 +187,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.section, { backgroundColor: colors.background }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Data Management</Text>
-        
-        <TouchableOpacity style={[styles.settingRow, { borderTopColor: colors.border }]}>
-          <View style={styles.settingInfo}>
-            <Wrench size={22} color={colors.text} style={styles.settingIcon} />
-            <View>
-              <Text style={[styles.settingLabel, { color: colors.text }]}>
-                Import Data
-              </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Import products from CSV
-              </Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </View>
-
+      {/* Developer Tools Section */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Developer Tools</Text>
         
@@ -150,7 +204,7 @@ export default function SettingsScreen() {
             {isTestingEnv ? (
               <ActivityIndicator size="small" color={colors.primary} style={styles.settingIcon} />
             ) : (
-              <SettingsIcon size={22} color={colors.text} style={styles.settingIcon} />
+              <Wrench size={22} color={colors.text} style={styles.settingIcon} />
             )}
             <View>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
@@ -164,9 +218,8 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Version Info */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>About</Text>
-        
         <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
           <View style={styles.settingInfo}>
             <View>
@@ -199,6 +252,60 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     padding: 16,
+  },
+  aboutHeader: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    alignItems: 'center',
+  },
+  tagline: {
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 12,
+  },
+  description: {
+    fontSize: 15,
+    lineHeight: 22,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  subheading: {
+    fontSize: 16,
+    fontWeight: '600',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  bulletPoints: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  bulletPoint: {
+    fontSize: 14,
+    lineHeight: 22,
+    paddingVertical: 2,
+  },
+  quote: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 8,
+  },
+  quoteText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    lineHeight: 20,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  contactText: {
+    fontSize: 14,
+    marginLeft: 8,
+    textDecorationLine: 'underline',
   },
   settingRow: {
     flexDirection: 'row',

@@ -1,23 +1,41 @@
 import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, FileText } from 'lucide-react-native';
+import { ArrowLeft, FileText, Mail } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { formatDate } from '@/utils/dateUtils';
+import { sendPurchaseOrderEmail } from '@/services/emailService';
 
 export default function POPreviewScreen() {
   const router = useRouter();
   const { colors } = useThemeStore();
-  const { purchaseOrders } = useInventoryStore();
+  const { purchaseOrders, suppliers } = useInventoryStore();
 
-  // Get the most recent order
-  const latestOrder = purchaseOrders[purchaseOrders.length - 1];
+  // Get the most recent orders (all from the last submission)
+  const latestOrders = purchaseOrders.slice(-5); // Show last 5 orders or adjust as needed
 
-  // Group items by supplier if we have an order
-  const supplierGroups = latestOrder ? {
-    [latestOrder.supplierName]: latestOrder.items
-  } : {};
+  const handleSendPO = async (purchaseOrder: any) => {
+    // Find supplier email if available
+    const supplier = suppliers.find(s => s.name === purchaseOrder.supplierName);
+    const supplierEmail = supplier?.email;
+
+    if (!supplierEmail) {
+      Alert.alert(
+        "No Email Address",
+        `No email address found for ${purchaseOrder.supplierName}. The email will open without a recipient address.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { 
+            text: "Continue", 
+            onPress: () => sendPurchaseOrderEmail(purchaseOrder)
+          }
+        ]
+      );
+    } else {
+      await sendPurchaseOrderEmail(purchaseOrder, supplierEmail);
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -31,11 +49,11 @@ export default function POPreviewScreen() {
         <Text style={[styles.headerTitle, { color: colors.text }]}>PO Preview</Text>
       </View>
 
-      {Object.keys(supplierGroups).length > 0 ? (
+      {latestOrders.length > 0 ? (
         <ScrollView style={styles.content}>
-          {Object.entries(supplierGroups).map(([supplier, items], index) => (
+          {latestOrders.map((order, index) => (
             <View 
-              key={index} 
+              key={order.id} 
               style={[styles.poContainer, { 
                 backgroundColor: colors.lightGray,
                 borderColor: colors.border 
@@ -44,14 +62,19 @@ export default function POPreviewScreen() {
               <View style={styles.poHeader}>
                 <View>
                   <Text style={[styles.poNumber, { color: colors.text }]}>
-                    PO-{String(latestOrder.id).slice(-4).padStart(4, '0')}
+                    PO-{String(order.id).slice(-4).padStart(4, '0')}
                   </Text>
                   <Text style={[styles.poSupplier, { color: colors.text }]}>
-                    {supplier}
+                    {order.supplierName}
+                  </Text>
+                  <Text style={[styles.poStatus, { 
+                    color: order.status === 'submitted' ? colors.success : colors.inactive 
+                  }]}>
+                    Status: {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                   </Text>
                 </View>
                 <Text style={[styles.poDate, { color: colors.inactive }]}>
-                  {formatDate(new Date(latestOrder.date))}
+                  {formatDate(new Date(order.date))}
                 </Text>
               </View>
 
@@ -61,7 +84,7 @@ export default function POPreviewScreen() {
                 <Text style={[styles.columnHeader, styles.qtyColumn, { color: colors.inactive }]}>Qty</Text>
               </View>
 
-              {items.map((item, idx) => (
+              {order.items.map((item: any, idx: number) => (
                 <View 
                   key={idx} 
                   style={[styles.tableRow, { borderBottomColor: colors.border }]}
@@ -83,15 +106,15 @@ export default function POPreviewScreen() {
 
               <View style={styles.poFooter}>
                 <Text style={[styles.totalItems, { color: colors.inactive }]}>
-                  Total Items: {items.reduce((sum, item) => sum + item.quantity, 0)}
+                  Total Items: {order.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}
                 </Text>
                 <TouchableOpacity 
-                  style={[styles.sendButton, { backgroundColor: colors.inactive }]}
-                  disabled={true}
+                  style={[styles.sendButton, { backgroundColor: colors.primary }]}
+                  onPress={() => handleSendPO(order)}
                 >
-                  <FileText size={20} color={colors.background} />
+                  <Mail size={20} color={colors.background} />
                   <Text style={[styles.sendButtonText, { color: colors.background }]}>
-                    Send PO
+                    Send PO via Email
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -154,6 +177,11 @@ const styles = StyleSheet.create({
   },
   poSupplier: {
     fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  poStatus: {
+    fontSize: 14,
     fontWeight: '500',
   },
   poDate: {

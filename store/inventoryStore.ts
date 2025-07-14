@@ -124,7 +124,7 @@ export const useInventoryStore = create<InventoryState>()(
             itemsBySupplier[item.supplier].push(item);
           });
           
-          // Create purchase orders for each supplier
+          // Create separate purchase orders for each supplier
           const newOrders: PurchaseOrder[] = Object.entries(itemsBySupplier).map(([supplierName, items]) => {
             const supplier = state.suppliers.find(s => s.name === supplierName);
             
@@ -145,9 +145,10 @@ export const useInventoryStore = create<InventoryState>()(
 
           // Show notification if enabled
           if (useNotificationsStore.getState().orderUpdates) {
+            const supplierCount = Object.keys(itemsBySupplier).length;
             Alert.alert(
               "Order Submitted",
-              "Your order has been successfully submitted.",
+              `Your order has been successfully submitted. ${supplierCount} purchase order${supplierCount > 1 ? 's' : ''} created for ${supplierCount} supplier${supplierCount > 1 ? 's' : ''}.`,
               [{ text: "OK" }]
             );
           }

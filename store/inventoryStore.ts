@@ -15,9 +15,12 @@ interface InventoryState {
   purchaseOrders: PurchaseOrder[];
   isLoading: boolean;
   error: string | null;
+  isGoogleSheetsEnabled: boolean;
+  lastSyncTime: string | null;
   
   // Product Management
   setProducts: (products: Product[]) => void;
+  loadProductsFromSheets: () => Promise<void>;
   getProductByBarcode: (barcode: string) => Product | undefined;
   updateProductStock: (productId: string, newStock: number) => void;
   updateProduct: (productId: string, updatedProduct: Product) => void;
@@ -32,7 +35,12 @@ interface InventoryState {
   addToStocktake: (product: Product, quantity: number) => void;
   updateStocktakeItemQuantity: (productId: string, quantity: number) => void;
   removeFromStocktake: (productId: string) => void;
-  submitStocktake: () => void;
+  submitStocktake: () => Promise<void>;
+  
+  // Google Sheets Integration
+  initializeGoogleSheets: () => Promise<void>;
+  syncWithGoogleSheets: () => Promise<void>;
+  setGoogleSheetsEnabled: (enabled: boolean) => void;
   
   // Error Management
   setError: (error: string | null) => void;
@@ -48,8 +56,29 @@ export const useInventoryStore = create<InventoryState>()(
       purchaseOrders: [],
       isLoading: false,
       error: null,
+      isGoogleSheetsEnabled: false,
+      lastSyncTime: null,
 
-      setProducts: (products) => set({ products }),
+      setProducts: (products) => set({ products, lastSyncTime: new Date().toISOString() }),
+      
+      loadProductsFromSheets: async () => {
+        const state = get();
+        if (!state.isGoogleSheetsEnabled) return;
+        
+        set({ isLoading: true, error: null });
+        try {
+          const response = await trpcClient.products.getProducts.query();
+          set({ 
+            products: response.products, 
+            isLoading: false,
+            lastSyncTime: new Date().toISOString()
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to load products';
+          set({ error: errorMessage, isLoading: false });
+          throw error;
+        }
+      },
       
       getProductByBarcode: (barcode) => {
         return get().products.find(p => p.barcode === barcode);
@@ -63,13 +92,29 @@ export const useInventoryStore = create<InventoryState>()(
         )
       })),
 
-      updateProduct: (productId, updatedProduct) => set((state) => ({
-        products: state.products.map(product =>
-          product.id === productId
-            ? { ...product, ...updatedProduct }
-            : product
-        )
-      })),
+      updateProduct: async (productId, updatedProduct) => {
+        const state = get();
+        
+        // Update locally first
+        set({
+          products: state.products.map(product =>
+            product.id === productId
+              ? { ...product, ...updatedProduct }
+              : product
+          )
+        });
+        
+        // Sync to Google Sheets if enabled
+        if (state.isGoogleSheetsEnabled) {
+          try {
+            await trpcClient.products.updateProduct.mutate(updatedProduct);
+            set({ lastSyncTime: new Date().toISOString() });
+          } catch (error) {
+            console.error('Failed to sync product update to Google Sheets:', error);
+            // Don't throw error to avoid breaking local functionality
+          }
+        }
+      },
 
       addToOrder: (product, quantity) => set((state) => {
         const existingItem = state.currentOrderItems.find(item => item.productId === product.id);
@@ -209,27 +254,73 @@ export const useInventoryStore = create<InventoryState>()(
         currentStocktakeItems: state.currentStocktakeItems.filter(item => item.productId !== productId)
       })),
 
-      submitStocktake: () => set((state) => {
-        // Update product quantities based on stocktake
-        const updatedProducts = state.products.map(product => {
-          const stocktakeItem = state.currentStocktakeItems.find(item => item.productId === product.id);
-          if (stocktakeItem) {
-            // Low stock alert will be handled by the component
-            const newStock = stocktakeItem.actualQuantity;
-            return {
-              ...product,
-              currentStock: newStock
-            };
-          }
-          return product;
-        });
+      submitStocktake: async () => {
+        const state = get();
+        set({ isLoading: true, error: null });
         
-        return {
-          products: updatedProducts,
-          currentStocktakeItems: []
-        };
-      }),
+        try {
+          // Update product quantities based on stocktake
+          const updatedProducts = state.products.map(product => {
+            const stocktakeItem = state.currentStocktakeItems.find(item => item.productId === product.id);
+            if (stocktakeItem) {
+              const newStock = stocktakeItem.actualQuantity;
+              return {
+                ...product,
+                currentStock: newStock
+              };
+            }
+            return product;
+          });
+          
+          // Sync to Google Sheets if enabled
+          if (state.isGoogleSheetsEnabled) {
+            await trpcClient.stocktake.submitStocktake.mutate({
+              stocktakeItems: state.currentStocktakeItems,
+              updatedProducts
+            });
+          }
+          
+          set({
+            products: updatedProducts,
+            currentStocktakeItems: [],
+            isLoading: false,
+            lastSyncTime: new Date().toISOString()
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to submit stocktake';
+          set({ error: errorMessage, isLoading: false });
+          throw error;
+        }
+      },
 
+      initializeGoogleSheets: async () => {
+        set({ isLoading: true, error: null });
+        try {
+          await trpcClient.sheets.initialize.mutate();
+          set({ 
+            isGoogleSheetsEnabled: true, 
+            isLoading: false,
+            lastSyncTime: new Date().toISOString()
+          });
+          
+          // Load products from sheets after initialization
+          await get().loadProductsFromSheets();
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to initialize Google Sheets';
+          set({ error: errorMessage, isLoading: false });
+          throw error;
+        }
+      },
+      
+      syncWithGoogleSheets: async () => {
+        const state = get();
+        if (!state.isGoogleSheetsEnabled) return;
+        
+        await get().loadProductsFromSheets();
+      },
+      
+      setGoogleSheetsEnabled: (enabled) => set({ isGoogleSheetsEnabled: enabled }),
+      
       setError: (error) => set({ error }),
     }),
     {
@@ -237,7 +328,9 @@ export const useInventoryStore = create<InventoryState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         products: state.products,
-        purchaseOrders: state.purchaseOrders
+        purchaseOrders: state.purchaseOrders,
+        isGoogleSheetsEnabled: state.isGoogleSheetsEnabled,
+        lastSyncTime: state.lastSyncTime
       })
     }
   )

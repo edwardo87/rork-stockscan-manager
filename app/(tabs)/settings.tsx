@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Info, Wrench, FileText } from 'lucide-react-native';
+import { Info, Wrench, FileText, BookOpen } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { trpcClient } from '@/lib/trpc';
@@ -151,8 +151,27 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* About Section */}
+      {/* Help & About Section */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Help & About</Text>
+        
+        <TouchableOpacity 
+          style={[styles.settingRow, { borderTopColor: colors.border }]}
+          onPress={() => router.push('/how-to-use')}
+        >
+          <View style={styles.settingInfo}>
+            <BookOpen size={22} color={colors.text} style={styles.settingIcon} />
+            <View>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>
+                How to Use SmartStock
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                Step-by-step guides and tutorials
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+        
         <TouchableOpacity 
           style={[styles.settingRow, { borderTopColor: colors.border }]}
           onPress={() => router.push('/about')}

@@ -1,4 +1,4 @@
-import * as tslib from 'tslib';
+
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';

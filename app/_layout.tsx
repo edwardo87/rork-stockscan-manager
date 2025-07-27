@@ -7,7 +7,9 @@ import { StatusBar } from "expo-status-bar";
 import { useThemeStore } from "@/store/themeStore";
 import { Appearance } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { trpc, trpcClient } from "@/lib/trpc";
+import { trpc } from "@/lib/trpc";
+import { httpBatchLink } from "@trpc/client";
+import superjson from "superjson";
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
@@ -24,6 +26,22 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
     },
   },
+});
+
+const getBaseUrl = () => {
+  if (process.env.EXPO_PUBLIC_RORK_API_BASE_URL) {
+    return process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
+  }
+  throw new Error("No base url found, please set EXPO_PUBLIC_RORK_API_BASE_URL");
+};
+
+const trpcClient = trpc.createClient({
+  links: [
+    httpBatchLink({
+      url: `${getBaseUrl()}/api/trpc`,
+      transformer: superjson,
+    }),
+  ],
 });
 
 export default function RootLayout() {

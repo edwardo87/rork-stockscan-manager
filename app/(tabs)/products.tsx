@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, TextInput } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-
-import { Search, Filter, Plus } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Search, Filter } from 'lucide-react-native';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useThemeStore } from '@/store/themeStore';
 import ProductCard from '@/components/ProductCard';
@@ -26,20 +25,7 @@ export default function ProductsScreen() {
   };
 
   return (
-    <>
-      <Stack.Screen 
-        options={{
-          headerRight: () => (
-            <TouchableOpacity 
-              style={[styles.addButton, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/product/add')}
-            >
-              <Plus size={20} color={colors.background} />
-            </TouchableOpacity>
-          ),
-        }} 
-      />
-      <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
+    <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       <View style={[styles.searchContainer, { 
         backgroundColor: colors.background,
         borderBottomColor: colors.border
@@ -80,11 +66,10 @@ export default function ProductsScreen() {
       ) : (
         <EmptyState 
           type="products" 
-          onAction={() => router.push('/product/add')} 
+          onAction={() => {}} 
         />
       )}
-      </View>
-    </>
+    </View>
   );
 }
 
@@ -126,13 +111,5 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-  },
-  addButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
   },
 });

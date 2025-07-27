@@ -107,14 +107,14 @@ export async function sendPurchaseOrderEmail(
         console.log('Could not open email client:', e);
       }
       
-      // Use setTimeout to avoid state update during render
-      setTimeout(() => {
+      // Use Promise.resolve to avoid state update during render
+      Promise.resolve().then(() => {
         Alert.alert(
           "PDF Downloaded",
           "The purchase order PDF has been downloaded. Please attach it to your email manually.",
           [{ text: "OK" }]
         );
-      }, 100);
+      });
       
       return true;
       
@@ -129,26 +129,26 @@ export async function sendPurchaseOrderEmail(
         });
         return true;
       } else {
-        setTimeout(() => {
+        Promise.resolve().then(() => {
           Alert.alert(
             "Email Not Available",
             "No email client is configured on this device. Please set up an email app to send purchase orders.",
             [{ text: "OK" }]
           );
-        }, 100);
+        });
         return false;
       }
     }
     
   } catch (error) {
     console.error('Error sending purchase order email:', error);
-    setTimeout(() => {
+    Promise.resolve().then(() => {
       Alert.alert(
         "Email Error",
         "Failed to generate or send purchase order. Please try again.",
         [{ text: "OK" }]
       );
-    }, 100);
+    });
     return false;
   }
 }
@@ -160,13 +160,13 @@ export async function sendMultiplePurchaseOrders(
   purchaseOrders: PurchaseOrder[]
 ): Promise<void> {
   if (purchaseOrders.length === 0) {
-    setTimeout(() => {
+    Promise.resolve().then(() => {
       Alert.alert(
         "No Orders",
         "No purchase orders to send.",
         [{ text: "OK" }]
       );
-    }, 100);
+    });
     return;
   }
 
@@ -176,7 +176,7 @@ export async function sendMultiplePurchaseOrders(
   }
 
   // Multiple suppliers - ask user how they want to proceed
-  setTimeout(() => {
+  Promise.resolve().then(() => {
     Alert.alert(
       "Multiple Suppliers",
       `You have ${purchaseOrders.length} purchase orders for different suppliers. How would you like to send them?`,
@@ -197,7 +197,7 @@ export async function sendMultiplePurchaseOrders(
         }
       ]
     );
-  }, 100);
+  });
 }
 
 /**
@@ -229,12 +229,12 @@ export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Pro
     }
   } catch (error) {
     console.error('Error previewing PDF:', error);
-    setTimeout(() => {
+    Promise.resolve().then(() => {
       Alert.alert(
         "Preview Error",
         "Failed to generate PDF preview. Please try again.",
         [{ text: "OK" }]
       );
-    }, 100);
+    });
   }
 }

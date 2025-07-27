@@ -81,20 +81,29 @@ function RootLayoutNav() {
   // Listen for system theme changes
   useEffect(() => {
     let isMounted = true;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     
     const subscription = Appearance.addChangeListener(({ colorScheme }) => {
       if (colorScheme && isMounted) {
-        // Use requestAnimationFrame to avoid state update during render
-        requestAnimationFrame(() => {
+        // Clear any pending timeout
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        
+        // Use setTimeout to ensure state update happens after current render cycle
+        timeoutId = setTimeout(() => {
           if (isMounted) {
             useThemeStore.getState().setTheme(colorScheme as 'light' | 'dark');
           }
-        });
+        }, 0);
       }
     });
 
     return () => {
       isMounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       subscription?.remove();
     };
   }, []);

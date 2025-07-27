@@ -2,19 +2,8 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import { formatDate } from '@/utils/dateUtils';
 
-// Import pdf-lib with proper error handling
-let PDFDocument: any;
-let rgb: any;
-let StandardFonts: any;
-
-try {
-  const pdfLib = require('pdf-lib');
-  PDFDocument = pdfLib.PDFDocument;
-  rgb = pdfLib.rgb;
-  StandardFonts = pdfLib.StandardFonts;
-} catch (error) {
-  console.error('Failed to load pdf-lib:', error);
-}
+// Import pdf-lib properly to avoid tslib destructuring issues
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 export interface POData {
   id: string;

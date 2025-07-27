@@ -15,7 +15,6 @@ export default function POPreviewScreen() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   useEffect(() => {
-    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
@@ -27,7 +26,9 @@ export default function POPreviewScreen() {
   const handleSendPO = useCallback(async (purchaseOrder: any) => {
     if (!isMountedRef.current || isProcessing) return;
     
-    setIsProcessing(true);
+    if (isMountedRef.current) {
+      setIsProcessing(true);
+    }
     
     try {
       // Find supplier email if available
@@ -36,62 +37,65 @@ export default function POPreviewScreen() {
 
       if (!supplierEmail) {
         if (!isMountedRef.current) {
-          setIsProcessing(false);
           return;
         }
-        Alert.alert(
-          "No Email Address",
-          `No email address found for ${purchaseOrder.supplierName}. The email will open without a recipient address.`,
-          [
-            { 
-              text: "Cancel", 
-              style: "cancel",
-              onPress: () => {
-                if (isMountedRef.current) {
-                  setIsProcessing(false);
-                }
-              }
-            },
-            { 
-              text: "Continue", 
-              onPress: async () => {
-                if (!isMountedRef.current) {
-                  setIsProcessing(false);
-                  return;
-                }
-                try {
-                  const success = await sendPurchaseOrderEmail(purchaseOrder);
-                  if (success && isMountedRef.current) {
-                    Alert.alert(
-                      "Success",
-                      "Purchase order email prepared successfully!",
-                      [{ 
-                        text: "OK",
-                        onPress: () => {
-                          if (isMountedRef.current) {
-                            setIsProcessing(false);
-                          }
-                        }
-                      }]
-                    );
-                  } else if (isMountedRef.current) {
-                    setIsProcessing(false);
-                  }
-                } catch (err) {
-                  console.error('Error sending PO:', err);
+        
+        Promise.resolve().then(() => {
+          if (!isMountedRef.current) return;
+          
+          Alert.alert(
+            "No Email Address",
+            `No email address found for ${purchaseOrder.supplierName}. The email will open without a recipient address.`,
+            [
+              { 
+                text: "Cancel", 
+                style: "cancel",
+                onPress: () => {
                   if (isMountedRef.current) {
                     setIsProcessing(false);
-                    Alert.alert(
-                      "Error",
-                      "Failed to send purchase order. Please try again.",
-                      [{ text: "OK" }]
-                    );
+                  }
+                }
+              },
+              { 
+                text: "Continue", 
+                onPress: async () => {
+                  if (!isMountedRef.current) {
+                    return;
+                  }
+                  try {
+                    const success = await sendPurchaseOrderEmail(purchaseOrder);
+                    if (success && isMountedRef.current) {
+                      Alert.alert(
+                        "Success",
+                        "Purchase order email prepared successfully!",
+                        [{ 
+                          text: "OK",
+                          onPress: () => {
+                            if (isMountedRef.current) {
+                              setIsProcessing(false);
+                            }
+                          }
+                        }]
+                      );
+                    } else if (isMountedRef.current) {
+                      setIsProcessing(false);
+                    }
+                  } catch (err) {
+                    console.error('Error sending PO:', err);
+                    if (isMountedRef.current) {
+                      setIsProcessing(false);
+                      Alert.alert(
+                        "Error",
+                        "Failed to send purchase order. Please try again.",
+                        [{ text: "OK" }]
+                      );
+                    }
                   }
                 }
               }
-            }
-          ]
-        );
+            ]
+          );
+        });
       } else {
         const success = await sendPurchaseOrderEmail(purchaseOrder, supplierEmail);
         if (success && isMountedRef.current) {
@@ -127,7 +131,9 @@ export default function POPreviewScreen() {
   const handlePreviewPDF = useCallback(async (purchaseOrder: any) => {
     if (!isMountedRef.current || isProcessing) return;
     
-    setIsProcessing(true);
+    if (isMountedRef.current) {
+      setIsProcessing(true);
+    }
     
     try {
       await previewPurchaseOrderPDF(purchaseOrder);

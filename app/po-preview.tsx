@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, FileText, Mail, Eye } from 'lucide-react-native';
@@ -11,17 +11,27 @@ export default function POPreviewScreen() {
   const router = useRouter();
   const { colors } = useThemeStore();
   const { purchaseOrders, suppliers } = useInventoryStore();
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Get the most recent orders (all from the last submission)
   const latestOrders = purchaseOrders.slice(-5); // Show last 5 orders or adjust as needed
 
   const handleSendPO = async (purchaseOrder: any) => {
+    if (!isMountedRef.current) return;
+    
     try {
       // Find supplier email if available
       const supplier = suppliers.find(s => s.name === purchaseOrder.supplierName);
       const supplierEmail = supplier?.email;
 
       if (!supplierEmail) {
+        if (!isMountedRef.current) return;
         Alert.alert(
           "No Email Address",
           `No email address found for ${purchaseOrder.supplierName}. The email will open without a recipient address.`,
@@ -30,8 +40,9 @@ export default function POPreviewScreen() {
             { 
               text: "Continue", 
               onPress: async () => {
+                if (!isMountedRef.current) return;
                 const success = await sendPurchaseOrderEmail(purchaseOrder);
-                if (success) {
+                if (success && isMountedRef.current) {
                   Alert.alert(
                     "Success",
                     "Purchase order email prepared successfully!",
@@ -44,7 +55,7 @@ export default function POPreviewScreen() {
         );
       } else {
         const success = await sendPurchaseOrderEmail(purchaseOrder, supplierEmail);
-        if (success) {
+        if (success && isMountedRef.current) {
           Alert.alert(
             "Success",
             "Purchase order sent successfully!",
@@ -54,24 +65,30 @@ export default function POPreviewScreen() {
       }
     } catch (error) {
       console.error('Error in handleSendPO:', error);
-      Alert.alert(
-        "Error",
-        "Failed to send purchase order. Please try again.",
-        [{ text: "OK" }]
-      );
+      if (isMountedRef.current) {
+        Alert.alert(
+          "Error",
+          "Failed to send purchase order. Please try again.",
+          [{ text: "OK" }]
+        );
+      }
     }
   };
 
   const handlePreviewPDF = async (purchaseOrder: any) => {
+    if (!isMountedRef.current) return;
+    
     try {
       await previewPurchaseOrderPDF(purchaseOrder);
     } catch (error) {
       console.error('Error in handlePreviewPDF:', error);
-      Alert.alert(
-        "Error",
-        "Failed to preview PDF. Please try again.",
-        [{ text: "OK" }]
-      );
+      if (isMountedRef.current) {
+        Alert.alert(
+          "Error",
+          "Failed to preview PDF. Please try again.",
+          [{ text: "OK" }]
+        );
+      }
     }
   };
 

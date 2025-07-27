@@ -62,16 +62,23 @@ function RootLayoutNav() {
   
   // Listen for system theme changes
   useEffect(() => {
+    let isMounted = true;
+    
     const subscription = Appearance.addChangeListener(({ colorScheme }) => {
-      if (colorScheme) {
-        // Use a timeout to avoid state update during render
-        setTimeout(() => {
-          useThemeStore.getState().setTheme(colorScheme as 'light' | 'dark');
-        }, 0);
+      if (colorScheme && isMounted) {
+        // Use requestAnimationFrame to avoid state update during render
+        requestAnimationFrame(() => {
+          if (isMounted) {
+            useThemeStore.getState().setTheme(colorScheme as 'light' | 'dark');
+          }
+        });
       }
     });
 
-    return () => subscription?.remove();
+    return () => {
+      isMounted = false;
+      subscription?.remove();
+    };
   }, []);
   
   return (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Info, Wrench, FileText } from 'lucide-react-native';
@@ -10,6 +10,13 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { colors, theme, toggleTheme } = useThemeStore();
   const [isTestingEnv, setIsTestingEnv] = useState(false);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   
   const {
     lowStockAlerts,
@@ -21,9 +28,13 @@ export default function SettingsScreen() {
   } = useNotificationsStore();
 
   const testEnvironment = async () => {
+    if (!isMountedRef.current) return;
+    
     try {
       setIsTestingEnv(true);
       const result = await trpcClient.test.env.query();
+      
+      if (!isMountedRef.current) return;
       
       if (result.success) {
         Alert.alert(
@@ -39,13 +50,17 @@ export default function SettingsScreen() {
         );
       }
     } catch (error) {
-      Alert.alert(
-        "❌ Connection Error",
-        "Failed to check environment variables.",
-        [{ text: "OK" }]
-      );
+      if (isMountedRef.current) {
+        Alert.alert(
+          "❌ Connection Error",
+          "Failed to check environment variables.",
+          [{ text: "OK" }]
+        );
+      }
     } finally {
-      setIsTestingEnv(false);
+      if (isMountedRef.current) {
+        setIsTestingEnv(false);
+      }
     }
   };
 

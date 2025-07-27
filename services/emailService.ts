@@ -53,6 +53,8 @@ export async function sendPurchaseOrderEmail(
   purchaseOrder: PurchaseOrder,
   supplierEmail?: string
 ): Promise<boolean> {
+  let isProcessing = true;
+  
   try {
     const poData: POData = {
       id: purchaseOrder.id,
@@ -69,9 +71,13 @@ export async function sendPurchaseOrderEmail(
     // Check if MailComposer is available (mobile)
     const isMailAvailable = await MailComposer.isAvailableAsync();
     
+    if (!isProcessing) return false;
+    
     if (isMailAvailable && Platform.OS !== 'web') {
       // Generate PDF file for mobile
       const pdfUri = await generatePurchaseOrderPDF(poData);
+      
+      if (!isProcessing) return false;
       
       const emailOptions: MailComposer.MailComposerOptions = {
         recipients: supplierEmail ? [supplierEmail] : [],
@@ -86,6 +92,8 @@ export async function sendPurchaseOrderEmail(
     } else if (Platform.OS === 'web') {
       // For web, generate PDF and offer download/share
       const pdfUri = await generatePurchaseOrderPDF(poData);
+      
+      if (!isProcessing) return false;
       
       // Create a download link
       const link = document.createElement('a');
@@ -107,17 +115,21 @@ export async function sendPurchaseOrderEmail(
         console.log('Could not open email client:', e);
       }
       
-      Alert.alert(
-        "PDF Downloaded",
-        "The purchase order PDF has been downloaded. Please attach it to your email manually.",
-        [{ text: "OK" }]
-      );
+      if (isProcessing) {
+        Alert.alert(
+          "PDF Downloaded",
+          "The purchase order PDF has been downloaded. Please attach it to your email manually.",
+          [{ text: "OK" }]
+        );
+      }
       
       return true;
       
     } else {
       // Fallback to sharing the PDF
       const pdfUri = await generatePurchaseOrderPDF(poData);
+      
+      if (!isProcessing) return false;
       
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(pdfUri, {
@@ -126,23 +138,29 @@ export async function sendPurchaseOrderEmail(
         });
         return true;
       } else {
-        Alert.alert(
-          "Email Not Available",
-          "No email client is configured on this device. Please set up an email app to send purchase orders.",
-          [{ text: "OK" }]
-        );
+        if (isProcessing) {
+          Alert.alert(
+            "Email Not Available",
+            "No email client is configured on this device. Please set up an email app to send purchase orders.",
+            [{ text: "OK" }]
+          );
+        }
         return false;
       }
     }
     
   } catch (error) {
     console.error('Error sending purchase order email:', error);
-    Alert.alert(
-      "Email Error",
-      "Failed to generate or send purchase order. Please try again.",
-      [{ text: "OK" }]
-    );
+    if (isProcessing) {
+      Alert.alert(
+        "Email Error",
+        "Failed to generate or send purchase order. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
     return false;
+  } finally {
+    isProcessing = false;
   }
 }
 
@@ -193,6 +211,8 @@ export async function sendMultiplePurchaseOrders(
  * Preview PDF in browser or share (for testing/preview purposes)
  */
 export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Promise<void> {
+  let isProcessing = true;
+  
   try {
     const poData: POData = {
       id: purchaseOrder.id,
@@ -203,6 +223,8 @@ export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Pro
     };
 
     const pdfUri = await generatePurchaseOrderPDF(poData);
+    
+    if (!isProcessing) return;
     
     if (Platform.OS === 'web') {
       // Open PDF in new tab
@@ -218,10 +240,14 @@ export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Pro
     }
   } catch (error) {
     console.error('Error previewing PDF:', error);
-    Alert.alert(
-      "Preview Error",
-      "Failed to generate PDF preview. Please try again.",
-      [{ text: "OK" }]
-    );
+    if (isProcessing) {
+      Alert.alert(
+        "Preview Error",
+        "Failed to generate PDF preview. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
+  } finally {
+    isProcessing = false;
   }
 }

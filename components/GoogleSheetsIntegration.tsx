@@ -59,7 +59,7 @@ export const GoogleSheetsIntegration: React.FC = () => {
   const handleDisableIntegration = () => {
     Alert.alert(
       'Disable Google Sheets Integration',
-      'Are you sure you want to disable Google Sheets integration? Your local data will remain, but changes won\\'t sync to Google Sheets.',
+      'Are you sure you want to disable Google Sheets integration? Your local data will remain, but changes won\'t sync to Google Sheets.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -85,9 +85,9 @@ export const GoogleSheetsIntegration: React.FC = () => {
       <View style={styles.header}>
         <View style={styles.titleRow}>
           {isGoogleSheetsEnabled ? (
-            <Cloud size={24} color=\"#10B981\" />
+            <Cloud size={24} color="#10B981" />
           ) : (
-            <CloudOff size={24} color=\"#6B7280\" />
+            <CloudOff size={24} color="#6B7280" />
           )}
           <Text style={styles.title}>Google Sheets Integration</Text>
         </View>
@@ -95,12 +95,12 @@ export const GoogleSheetsIntegration: React.FC = () => {
         <View style={styles.statusRow}>
           {isGoogleSheetsEnabled ? (
             <View style={styles.statusBadge}>
-              <CheckCircle size={16} color=\"#10B981\" />
+              <CheckCircle size={16} color="#10B981" />
               <Text style={styles.statusTextEnabled}>Enabled</Text>
             </View>
           ) : (
             <View style={[styles.statusBadge, styles.statusBadgeDisabled]}>
-              <AlertCircle size={16} color=\"#6B7280\" />
+              <AlertCircle size={16} color="#6B7280" />
               <Text style={styles.statusTextDisabled}>Disabled</Text>
             </View>
           )}
@@ -113,7 +113,7 @@ export const GoogleSheetsIntegration: React.FC = () => {
 
       {error && (
         <View style={styles.errorContainer}>
-          <AlertCircle size={16} color=\"#EF4444\" />
+          <AlertCircle size={16} color="#EF4444" />
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
@@ -132,7 +132,7 @@ export const GoogleSheetsIntegration: React.FC = () => {
             onPress={handleInitializeSheets}
             disabled={isInitializing || isLoading}
           >
-            <Settings size={20} color=\"#FFFFFF\" />
+            <Settings size={20} color="#FFFFFF" />
             <Text style={styles.primaryButtonText}>
               {isInitializing ? 'Initializing...' : 'Initialize Google Sheets'}
             </Text>
@@ -144,7 +144,7 @@ export const GoogleSheetsIntegration: React.FC = () => {
               onPress={handleSync}
               disabled={isLoading}
             >
-              <RefreshCw size={20} color=\"#10B981\" />
+              <RefreshCw size={20} color="#10B981" />
               <Text style={styles.syncButtonText}>
                 {isLoading ? 'Syncing...' : 'Sync Now'}
               </Text>

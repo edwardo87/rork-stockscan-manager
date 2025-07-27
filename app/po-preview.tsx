@@ -1,11 +1,11 @@
 import React from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, FileText, Mail } from 'lucide-react-native';
+import { ArrowLeft, FileText, Mail, Eye } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { formatDate } from '@/utils/dateUtils';
-import { sendPurchaseOrderEmail } from '@/services/emailService';
+import { sendPurchaseOrderEmail, previewPurchaseOrderPDF } from '@/services/emailService';
 
 export default function POPreviewScreen() {
   const router = useRouter();
@@ -16,24 +16,62 @@ export default function POPreviewScreen() {
   const latestOrders = purchaseOrders.slice(-5); // Show last 5 orders or adjust as needed
 
   const handleSendPO = async (purchaseOrder: any) => {
-    // Find supplier email if available
-    const supplier = suppliers.find(s => s.name === purchaseOrder.supplierName);
-    const supplierEmail = supplier?.email;
+    try {
+      // Find supplier email if available
+      const supplier = suppliers.find(s => s.name === purchaseOrder.supplierName);
+      const supplierEmail = supplier?.email;
 
-    if (!supplierEmail) {
+      if (!supplierEmail) {
+        Alert.alert(
+          "No Email Address",
+          `No email address found for ${purchaseOrder.supplierName}. The email will open without a recipient address.`,
+          [
+            { text: "Cancel", style: "cancel" },
+            { 
+              text: "Continue", 
+              onPress: async () => {
+                const success = await sendPurchaseOrderEmail(purchaseOrder);
+                if (success) {
+                  Alert.alert(
+                    "Success",
+                    "Purchase order email prepared successfully!",
+                    [{ text: "OK" }]
+                  );
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        const success = await sendPurchaseOrderEmail(purchaseOrder, supplierEmail);
+        if (success) {
+          Alert.alert(
+            "Success",
+            "Purchase order sent successfully!",
+            [{ text: "OK" }]
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error in handleSendPO:', error);
       Alert.alert(
-        "No Email Address",
-        `No email address found for ${purchaseOrder.supplierName}. The email will open without a recipient address.`,
-        [
-          { text: "Cancel", style: "cancel" },
-          { 
-            text: "Continue", 
-            onPress: () => sendPurchaseOrderEmail(purchaseOrder)
-          }
-        ]
+        "Error",
+        "Failed to send purchase order. Please try again.",
+        [{ text: "OK" }]
       );
-    } else {
-      await sendPurchaseOrderEmail(purchaseOrder, supplierEmail);
+    }
+  };
+
+  const handlePreviewPDF = async (purchaseOrder: any) => {
+    try {
+      await previewPurchaseOrderPDF(purchaseOrder);
+    } catch (error) {
+      console.error('Error in handlePreviewPDF:', error);
+      Alert.alert(
+        "Error",
+        "Failed to preview PDF. Please try again.",
+        [{ text: "OK" }]
+      );
     }
   };
 
@@ -108,15 +146,28 @@ export default function POPreviewScreen() {
                 <Text style={[styles.totalItems, { color: colors.inactive }]}>
                   Total Items: {order.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}
                 </Text>
-                <TouchableOpacity 
-                  style={[styles.sendButton, { backgroundColor: colors.primary }]}
-                  onPress={() => handleSendPO(order)}
-                >
-                  <Mail size={20} color={colors.background} />
-                  <Text style={[styles.sendButtonText, { color: colors.background }]}>
-                    Send PO via Email
-                  </Text>
-                </TouchableOpacity>
+                
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity 
+                    style={[styles.previewButton, { borderColor: colors.primary }]}
+                    onPress={() => handlePreviewPDF(order)}
+                  >
+                    <Eye size={18} color={colors.primary} />
+                    <Text style={[styles.previewButtonText, { color: colors.primary }]}>
+                      Preview PDF
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.sendButton, { backgroundColor: colors.primary }]}
+                    onPress={() => handleSendPO(order)}
+                  >
+                    <Mail size={20} color={colors.background} />
+                    <Text style={[styles.sendButtonText, { color: colors.background }]}>
+                      Send PO
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           ))}
@@ -223,7 +274,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 12,
   },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  previewButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  previewButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
   sendButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -231,9 +301,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   sendButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    marginLeft: 8,
+    marginLeft: 6,
   },
   emptyState: {
     flex: 1,

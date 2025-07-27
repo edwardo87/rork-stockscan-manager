@@ -58,25 +58,21 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
-  const { theme, colors, setTheme } = useThemeStore();
+  const { theme, colors } = useThemeStore();
   
-  // Initialize theme and listen for system theme changes
+  // Listen for system theme changes
   useEffect(() => {
-    // Set initial theme based on system preference
-    const currentScheme = Appearance.getColorScheme();
-    if (currentScheme) {
-      setTheme(currentScheme as 'light' | 'dark');
-    }
-    
-    // Listen for system theme changes
     const subscription = Appearance.addChangeListener(({ colorScheme }) => {
       if (colorScheme) {
-        setTheme(colorScheme as 'light' | 'dark');
+        // Use a timeout to avoid state update during render
+        setTimeout(() => {
+          useThemeStore.getState().setTheme(colorScheme as 'light' | 'dark');
+        }, 0);
       }
     });
 
     return () => subscription?.remove();
-  }, [setTheme]);
+  }, []);
   
   return (
     <>

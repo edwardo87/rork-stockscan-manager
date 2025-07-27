@@ -55,26 +55,38 @@ const getSystemTheme = (): ThemeType => {
 
 export const useThemeStore = create<ThemeState>()(
   persist(
-    (set) => ({
-      theme: 'light',
-      colors: lightColors,
+    (set, get) => ({
+      theme: getSystemTheme(),
+      colors: getSystemTheme() === 'dark' ? darkColors : lightColors,
       
-      toggleTheme: () => set((state) => {
-        const newTheme = state.theme === 'light' ? 'dark' : 'light';
-        return {
+      toggleTheme: () => {
+        const currentState = get();
+        const newTheme = currentState.theme === 'light' ? 'dark' : 'light';
+        set({
           theme: newTheme,
           colors: newTheme === 'dark' ? darkColors : lightColors,
-        };
-      }),
+        });
+      },
       
-      setTheme: (theme) => set({
-        theme,
-        colors: theme === 'dark' ? darkColors : lightColors,
-      }),
+      setTheme: (theme) => {
+        const currentState = get();
+        if (currentState.theme !== theme) {
+          set({
+            theme,
+            colors: theme === 'dark' ? darkColors : lightColors,
+          });
+        }
+      },
     }),
     {
       name: 'theme-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Ensure colors are set correctly after rehydration
+          state.colors = state.theme === 'dark' ? darkColors : lightColors;
+        }
+      },
     }
   )
 );

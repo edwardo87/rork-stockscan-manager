@@ -53,13 +53,11 @@ const getSystemTheme = (): ThemeType => {
   }
 };
 
-const systemTheme = getSystemTheme();
-
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      theme: systemTheme,
-      colors: systemTheme === 'dark' ? darkColors : lightColors,
+      theme: 'light',
+      colors: lightColors,
       
       toggleTheme: () => set((state) => {
         const newTheme = state.theme === 'light' ? 'dark' : 'light';

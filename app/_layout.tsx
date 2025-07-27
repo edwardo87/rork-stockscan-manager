@@ -2,7 +2,7 @@ import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useThemeStore } from "@/store/themeStore";
 import { Appearance } from "react-native";
@@ -16,20 +16,24 @@ export const unstable_settings = {
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-// Create a client
-const queryClient = new QueryClient();
-const TRPCProvider = trpc.Provider;
+// Create a client outside of component to avoid recreation
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     ...FontAwesome.font,
   });
   
-  const [isReady, setIsReady] = useState(false);
-
   useEffect(() => {
     if (error) {
-      console.error(error);
+      console.error('Font loading error:', error);
       throw error;
     }
   }, [error]);
@@ -37,35 +41,41 @@ export default function RootLayout() {
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
-      setIsReady(true);
     }
   }, [loaded]);
 
-  if (!loaded || !isReady) {
+  if (!loaded) {
     return null;
   }
 
   return (
-    <TRPCProvider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
+      <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <RootLayoutNav />
-      </QueryClientProvider>
-    </TRPCProvider>
+      </trpc.Provider>
+    </QueryClientProvider>
   );
 }
 
 function RootLayoutNav() {
   const { theme, colors, setTheme } = useThemeStore();
   
-  // Listen for system theme changes
+  // Initialize theme and listen for system theme changes
   useEffect(() => {
+    // Set initial theme based on system preference
+    const currentScheme = Appearance.getColorScheme();
+    if (currentScheme) {
+      setTheme(currentScheme as 'light' | 'dark');
+    }
+    
+    // Listen for system theme changes
     const subscription = Appearance.addChangeListener(({ colorScheme }) => {
       if (colorScheme) {
         setTheme(colorScheme as 'light' | 'dark');
       }
     });
 
-    return () => subscription.remove();
+    return () => subscription?.remove();
   }, [setTheme]);
   
   return (

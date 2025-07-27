@@ -2,7 +2,7 @@ import { Linking, Alert, Platform } from 'react-native';
 import * as MailComposer from 'expo-mail-composer';
 import * as Sharing from 'expo-sharing';
 import { PurchaseOrder } from '@/types/inventory';
-import { generatePurchaseOrderPDF, generateBase64PDF, POData } from './pdfService';
+import { generatePurchaseOrderPDF, POData } from './pdfService';
 
 /**
  * Formats a purchase order into email content
@@ -107,14 +107,14 @@ export async function sendPurchaseOrderEmail(
         console.log('Could not open email client:', e);
       }
       
-      // Use Promise.resolve to avoid state update during render
-      Promise.resolve().then(() => {
+      // Show alert after a brief delay to avoid state update during render
+      setTimeout(() => {
         Alert.alert(
           "PDF Downloaded",
           "The purchase order PDF has been downloaded. Please attach it to your email manually.",
           [{ text: "OK" }]
         );
-      });
+      }, 100);
       
       return true;
       
@@ -129,26 +129,26 @@ export async function sendPurchaseOrderEmail(
         });
         return true;
       } else {
-        Promise.resolve().then(() => {
+        setTimeout(() => {
           Alert.alert(
             "Email Not Available",
             "No email client is configured on this device. Please set up an email app to send purchase orders.",
             [{ text: "OK" }]
           );
-        });
+        }, 100);
         return false;
       }
     }
     
   } catch (error) {
     console.error('Error sending purchase order email:', error);
-    Promise.resolve().then(() => {
+    setTimeout(() => {
       Alert.alert(
         "Email Error",
         "Failed to generate or send purchase order. Please try again.",
         [{ text: "OK" }]
       );
-    });
+    }, 100);
     return false;
   }
 }
@@ -160,13 +160,13 @@ export async function sendMultiplePurchaseOrders(
   purchaseOrders: PurchaseOrder[]
 ): Promise<void> {
   if (purchaseOrders.length === 0) {
-    Promise.resolve().then(() => {
+    setTimeout(() => {
       Alert.alert(
         "No Orders",
         "No purchase orders to send.",
         [{ text: "OK" }]
       );
-    });
+    }, 100);
     return;
   }
 
@@ -176,7 +176,7 @@ export async function sendMultiplePurchaseOrders(
   }
 
   // Multiple suppliers - ask user how they want to proceed
-  Promise.resolve().then(() => {
+  setTimeout(() => {
     Alert.alert(
       "Multiple Suppliers",
       `You have ${purchaseOrders.length} purchase orders for different suppliers. How would you like to send them?`,
@@ -197,7 +197,7 @@ export async function sendMultiplePurchaseOrders(
         }
       ]
     );
-  });
+  }, 100);
 }
 
 /**
@@ -229,12 +229,12 @@ export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Pro
     }
   } catch (error) {
     console.error('Error previewing PDF:', error);
-    Promise.resolve().then(() => {
+    setTimeout(() => {
       Alert.alert(
         "Preview Error",
         "Failed to generate PDF preview. Please try again.",
         [{ text: "OK" }]
       );
-    });
+    }, 100);
   }
 }

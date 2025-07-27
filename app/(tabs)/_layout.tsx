@@ -1,6 +1,6 @@
 import React from "react";
 import { Tabs } from "expo-router";
-import { ShoppingCart, ClipboardList, Package, Settings } from 'lucide-react-native';
+import { ShoppingCart, ClipboardList, Package, Settings, ScanLine } from 'lucide-react-native';
 import { useThemeStore } from "@/store/themeStore";
 import { Platform, StyleSheet, View } from 'react-native';
 import SmartStockLogo from "@/components/SmartStockLogo";
@@ -67,6 +67,15 @@ export default function TabLayout() {
           tabBarLabel: "Stocktake",
           tabBarIcon: ({ color, size }) => (
             <ClipboardList size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="scanner"
+        options={{
+          tabBarLabel: "Scanner",
+          tabBarIcon: ({ color, size }) => (
+            <ScanLine size={size} color={color} />
           ),
         }}
       />

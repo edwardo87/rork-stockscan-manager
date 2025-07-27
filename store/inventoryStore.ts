@@ -20,6 +20,7 @@ interface InventoryState {
   
   // Product Management
   setProducts: (products: Product[]) => void;
+  addProduct: (product: Omit<Product, 'id'>) => void;
   loadProductsFromSheets: () => Promise<void>;
   getProductByBarcode: (barcode: string) => Product | undefined;
   updateProductStock: (productId: string, newStock: number) => void;
@@ -60,6 +61,17 @@ export const useInventoryStore = create<InventoryState>()(
       lastSyncTime: null,
 
       setProducts: (products) => set({ products, lastSyncTime: new Date().toISOString() }),
+      
+      addProduct: (product) => set((state) => {
+        const newProduct: Product = {
+          ...product,
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+        };
+        return {
+          products: [...state.products, newProduct],
+          lastSyncTime: new Date().toISOString()
+        };
+      }),
       
       loadProductsFromSheets: async () => {
         const state = get();

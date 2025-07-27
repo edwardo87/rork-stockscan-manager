@@ -5,8 +5,7 @@ import { Product, OrderItem, StocktakeItem, PurchaseOrder } from '@/types/invent
 import { products as mockProducts } from '@/mocks/products';
 import { suppliers as mockSuppliers } from '@/mocks/suppliers';
 import { trpcClient } from '@/lib/trpc';
-import { Alert } from 'react-native';
-import { useNotificationsStore } from './notificationsStore';
+
 
 interface InventoryState {
   products: Product[];
@@ -143,15 +142,7 @@ export const useInventoryStore = create<InventoryState>()(
             items: state.currentOrderItems
           });
 
-          // Show notification if enabled
-          if (useNotificationsStore.getState().orderUpdates) {
-            const supplierCount = Object.keys(itemsBySupplier).length;
-            Alert.alert(
-              "Order Submitted",
-              `Your order has been successfully submitted. ${supplierCount} purchase order${supplierCount > 1 ? 's' : ''} created for ${supplierCount} supplier${supplierCount > 1 ? 's' : ''}.`,
-              [{ text: "OK" }]
-            );
-          }
+          // Notification will be handled by the component
 
           // Update product stock levels
           const updatedProducts = state.products.map(product => {
@@ -223,15 +214,8 @@ export const useInventoryStore = create<InventoryState>()(
         const updatedProducts = state.products.map(product => {
           const stocktakeItem = state.currentStocktakeItems.find(item => item.productId === product.id);
           if (stocktakeItem) {
-            // Check if stock is low after update
+            // Low stock alert will be handled by the component
             const newStock = stocktakeItem.actualQuantity;
-            if (useNotificationsStore.getState().lowStockAlerts && newStock < product.minStock) {
-              Alert.alert(
-                "Low Stock Alert",
-                `${product.name} is below minimum stock level (${newStock} < ${product.minStock})`,
-                [{ text: "OK" }]
-              );
-            }
             return {
               ...product,
               currentStock: newStock

@@ -18,6 +18,7 @@ SplashScreen.preventAutoHideAsync();
 
 // Create a client
 const queryClient = new QueryClient();
+const TRPCProvider = trpc.Provider;
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -45,11 +46,11 @@ export default function RootLayout() {
   }
 
   return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+    <TRPCProvider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
         <RootLayoutNav />
       </QueryClientProvider>
-    </trpc.Provider>
+    </TRPCProvider>
   );
 }
 

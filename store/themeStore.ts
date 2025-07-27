@@ -44,8 +44,16 @@ interface ThemeState {
   setTheme: (theme: ThemeType) => void;
 }
 
-// Get the system theme
-const systemTheme = Appearance.getColorScheme() as ThemeType || 'light';
+// Get the system theme safely
+const getSystemTheme = (): ThemeType => {
+  try {
+    return (Appearance.getColorScheme() as ThemeType) || 'light';
+  } catch {
+    return 'light';
+  }
+};
+
+const systemTheme = getSystemTheme();
 
 export const useThemeStore = create<ThemeState>()(
   persist(

@@ -2,14 +2,12 @@ import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useThemeStore } from "@/store/themeStore";
 import { Appearance } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
-import { trpc } from "@/lib/trpc";
-import superjson from "superjson";
+import { trpc, trpcClient } from "@/lib/trpc";
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
@@ -21,33 +19,12 @@ SplashScreen.preventAutoHideAsync();
 // Create a client
 const queryClient = new QueryClient();
 
-// Initialize tRPC client
-const trpcClient = trpc.createClient({
-  links: [
-    httpBatchLink({
-      url: `${process.env.EXPO_PUBLIC_RORK_API_BASE_URL}/api/trpc`,
-      transformer: superjson,
-    }),
-  ],
-});
-
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     ...FontAwesome.font,
   });
   
-  const { theme, colors, setTheme } = useThemeStore();
-
-  // Listen for system theme changes
-  useEffect(() => {
-    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
-      if (colorScheme) {
-        setTheme(colorScheme as 'light' | 'dark');
-      }
-    });
-
-    return () => subscription.remove();
-  }, []);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     if (error) {
@@ -59,10 +36,11 @@ export default function RootLayout() {
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
+      setIsReady(true);
     }
   }, [loaded]);
 
-  if (!loaded) {
+  if (!loaded || !isReady) {
     return null;
   }
 
@@ -76,7 +54,18 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
-  const { theme, colors } = useThemeStore();
+  const { theme, colors, setTheme } = useThemeStore();
+  
+  // Listen for system theme changes
+  useEffect(() => {
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
+      if (colorScheme) {
+        setTheme(colorScheme as 'light' | 'dark');
+      }
+    });
+
+    return () => subscription.remove();
+  }, [setTheme]);
   
   return (
     <>

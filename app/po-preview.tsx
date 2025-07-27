@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, FileText, Mail, Eye } from 'lucide-react-native';
@@ -12,8 +12,10 @@ export default function POPreviewScreen() {
   const { colors } = useThemeStore();
   const { purchaseOrders, suppliers } = useInventoryStore();
   const isMountedRef = useRef(true);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
@@ -22,8 +24,10 @@ export default function POPreviewScreen() {
   // Get the most recent orders (all from the last submission)
   const latestOrders = purchaseOrders.slice(-5); // Show last 5 orders or adjust as needed
 
-  const handleSendPO = async (purchaseOrder: any) => {
-    if (!isMountedRef.current) return;
+  const handleSendPO = useCallback(async (purchaseOrder: any) => {
+    if (!isMountedRef.current || isProcessing) return;
+    
+    setIsProcessing(true);
     
     try {
       // Find supplier email if available
@@ -31,23 +35,58 @@ export default function POPreviewScreen() {
       const supplierEmail = supplier?.email;
 
       if (!supplierEmail) {
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current) {
+          setIsProcessing(false);
+          return;
+        }
         Alert.alert(
           "No Email Address",
           `No email address found for ${purchaseOrder.supplierName}. The email will open without a recipient address.`,
           [
-            { text: "Cancel", style: "cancel" },
+            { 
+              text: "Cancel", 
+              style: "cancel",
+              onPress: () => {
+                if (isMountedRef.current) {
+                  setIsProcessing(false);
+                }
+              }
+            },
             { 
               text: "Continue", 
               onPress: async () => {
-                if (!isMountedRef.current) return;
-                const success = await sendPurchaseOrderEmail(purchaseOrder);
-                if (success && isMountedRef.current) {
-                  Alert.alert(
-                    "Success",
-                    "Purchase order email prepared successfully!",
-                    [{ text: "OK" }]
-                  );
+                if (!isMountedRef.current) {
+                  setIsProcessing(false);
+                  return;
+                }
+                try {
+                  const success = await sendPurchaseOrderEmail(purchaseOrder);
+                  if (success && isMountedRef.current) {
+                    Alert.alert(
+                      "Success",
+                      "Purchase order email prepared successfully!",
+                      [{ 
+                        text: "OK",
+                        onPress: () => {
+                          if (isMountedRef.current) {
+                            setIsProcessing(false);
+                          }
+                        }
+                      }]
+                    );
+                  } else if (isMountedRef.current) {
+                    setIsProcessing(false);
+                  }
+                } catch (err) {
+                  console.error('Error sending PO:', err);
+                  if (isMountedRef.current) {
+                    setIsProcessing(false);
+                    Alert.alert(
+                      "Error",
+                      "Failed to send purchase order. Please try again.",
+                      [{ text: "OK" }]
+                    );
+                  }
                 }
               }
             }
@@ -59,13 +98,23 @@ export default function POPreviewScreen() {
           Alert.alert(
             "Success",
             "Purchase order sent successfully!",
-            [{ text: "OK" }]
+            [{ 
+              text: "OK",
+              onPress: () => {
+                if (isMountedRef.current) {
+                  setIsProcessing(false);
+                }
+              }
+            }]
           );
+        } else if (isMountedRef.current) {
+          setIsProcessing(false);
         }
       }
     } catch (error) {
       console.error('Error in handleSendPO:', error);
       if (isMountedRef.current) {
+        setIsProcessing(false);
         Alert.alert(
           "Error",
           "Failed to send purchase order. Please try again.",
@@ -73,16 +122,22 @@ export default function POPreviewScreen() {
         );
       }
     }
-  };
+  }, [suppliers, isProcessing]);
 
-  const handlePreviewPDF = async (purchaseOrder: any) => {
-    if (!isMountedRef.current) return;
+  const handlePreviewPDF = useCallback(async (purchaseOrder: any) => {
+    if (!isMountedRef.current || isProcessing) return;
+    
+    setIsProcessing(true);
     
     try {
       await previewPurchaseOrderPDF(purchaseOrder);
+      if (isMountedRef.current) {
+        setIsProcessing(false);
+      }
     } catch (error) {
       console.error('Error in handlePreviewPDF:', error);
       if (isMountedRef.current) {
+        setIsProcessing(false);
         Alert.alert(
           "Error",
           "Failed to preview PDF. Please try again.",
@@ -90,7 +145,7 @@ export default function POPreviewScreen() {
         );
       }
     }
-  };
+  }, [isProcessing]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -166,22 +221,30 @@ export default function POPreviewScreen() {
                 
                 <View style={styles.buttonRow}>
                   <TouchableOpacity 
-                    style={[styles.previewButton, { borderColor: colors.primary }]}
+                    style={[styles.previewButton, { 
+                      borderColor: colors.primary,
+                      opacity: isProcessing ? 0.6 : 1
+                    }]}
                     onPress={() => handlePreviewPDF(order)}
+                    disabled={isProcessing}
                   >
                     <Eye size={18} color={colors.primary} />
                     <Text style={[styles.previewButtonText, { color: colors.primary }]}>
-                      Preview PDF
+                      {isProcessing ? 'Processing...' : 'Preview PDF'}
                     </Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity 
-                    style={[styles.sendButton, { backgroundColor: colors.primary }]}
+                    style={[styles.sendButton, { 
+                      backgroundColor: colors.primary,
+                      opacity: isProcessing ? 0.6 : 1
+                    }]}
                     onPress={() => handleSendPO(order)}
+                    disabled={isProcessing}
                   >
                     <Mail size={20} color={colors.background} />
                     <Text style={[styles.sendButtonText, { color: colors.background }]}>
-                      Send PO
+                      {isProcessing ? 'Processing...' : 'Send PO'}
                     </Text>
                   </TouchableOpacity>
                 </View>

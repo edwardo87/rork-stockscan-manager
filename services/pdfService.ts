@@ -1,8 +1,20 @@
-
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system';
 import { formatDate } from '@/utils/dateUtils';
+
+// Import pdf-lib with proper error handling
+let PDFDocument: any;
+let rgb: any;
+let StandardFonts: any;
+
+try {
+  const pdfLib = require('pdf-lib');
+  PDFDocument = pdfLib.PDFDocument;
+  rgb = pdfLib.rgb;
+  StandardFonts = pdfLib.StandardFonts;
+} catch (error) {
+  console.error('Failed to load pdf-lib:', error);
+}
 
 export interface POData {
   id: string;
@@ -305,7 +317,7 @@ export async function generatePurchaseOrderPDF(poData: POData): Promise<string> 
     } else {
       // For mobile, save to file system
       // Convert Uint8Array to base64 string
-      const base64String = btoa(String.fromCharCode(...Array.from(pdfBytes)));
+      const base64String = btoa(String.fromCharCode(...Array.from(pdfBytes as Uint8Array)));
       await FileSystem.writeAsStringAsync(fileUri, base64String, {
         encoding: FileSystem.EncodingType.Base64
       });
@@ -578,7 +590,7 @@ export async function generateBase64PDF(poData: POData): Promise<string> {
     const pdfBytes = await pdfDoc.save();
     
     // Convert to base64
-    const base64String = Array.from(pdfBytes, byte => 
+    const base64String = Array.from(pdfBytes as Uint8Array, (byte: number) => 
       String.fromCharCode(byte)
     ).join('');
     

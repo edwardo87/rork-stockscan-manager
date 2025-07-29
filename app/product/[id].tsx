@@ -5,7 +5,6 @@ import { Edit, ShoppingBag, ClipboardList, QrCode } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import QuantityInput from '@/components/QuantityInput';
-// @ts-ignore - expo-barcode-generator doesn't have TypeScript declarations
 import { BarCodeCreator } from 'expo-barcode-generator';
 
 export default function ProductDetailsScreen() {

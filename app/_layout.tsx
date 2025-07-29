@@ -13,8 +13,13 @@ export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
 
-// Hide splash screen immediately since we're not loading fonts
-SplashScreen.hideAsync();
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync();
+
+// Hide splash screen after a short delay to prevent font loading timeout
+setTimeout(() => {
+  SplashScreen.hideAsync();
+}, 100);
 
 // Create a client outside of component to avoid recreation
 const queryClient = new QueryClient({

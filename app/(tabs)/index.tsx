@@ -23,17 +23,18 @@ export default function OrderScreen() {
     submitOrder
   } = useInventoryStore();
 
-  const handleBarcodeScan = (barcode: string, quantity: number = 1) => {
+  const handleBarcodeScan = (barcode: string, quantity?: number) => {
+    const finalQuantity = quantity ?? 1;
     setShowScanner(false);
     
     const product = getProductByBarcode(barcode);
     
     if (product) {
-      addToOrder(product, quantity);
+      addToOrder(product, finalQuantity);
       // Show success feedback
       Alert.alert(
         "Product Added",
-        `Added ${quantity} ${product.name} to order`,
+        `Added ${finalQuantity} ${product.name} to order`,
         [{ text: "OK" }]
       );
     } else {

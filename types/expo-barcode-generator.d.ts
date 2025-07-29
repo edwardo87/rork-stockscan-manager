@@ -10,5 +10,7 @@ declare module 'expo-barcode-generator' {
     color?: string;
   }
 
-  export const BarCodeCreator: ComponentType<BarCodeCreatorProps>;
+  const BarCodeCreator: ComponentType<BarCodeCreatorProps>;
+  export default BarCodeCreator;
+  export { BarCodeCreator };
 }

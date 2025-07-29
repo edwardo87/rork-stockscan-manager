@@ -1,11 +1,37 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Edit, ShoppingBag, ClipboardList, QrCode } from 'lucide-react-native';
+import { Edit, ShoppingBag, ClipboardList } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import QuantityInput from '@/components/QuantityInput';
-import { BarCodeCreator } from 'expo-barcode-generator';
+
+// Fallback QR code component
+const QRCodeFallback = ({ value, colors }: { value: string; colors: any }) => (
+  <View style={{
+    width: 200,
+    height: 200,
+    backgroundColor: colors.lightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  }}>
+    <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', marginBottom: 8 }}>QR Code</Text>
+    <Text style={{ color: colors.inactive, fontSize: 12, textAlign: 'center', paddingHorizontal: 16 }}>
+      {value}
+    </Text>
+  </View>
+);
+
+// Try to import BarCodeCreator, fallback if not available
+let BarCodeCreator: any = null;
+try {
+  BarCodeCreator = require('expo-barcode-generator').BarCodeCreator || require('expo-barcode-generator').default;
+} catch (error) {
+  console.log('BarCodeCreator not available, using fallback');
+}
 
 export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -137,14 +163,18 @@ export default function ProductDetailsScreen() {
                 Scan this QR code to quickly access this product
               </Text>
               <View style={styles.qrContainer}>
-                <BarCodeCreator
-                  value={product.barcode}
-                  format="QR"
-                  width={200}
-                  height={200}
-                  background={colors.background}
-                  color={colors.text}
-                />
+                {BarCodeCreator ? (
+                  <BarCodeCreator
+                    value={product.barcode}
+                    format="QR"
+                    width={200}
+                    height={200}
+                    background={colors.background}
+                    color={colors.text}
+                  />
+                ) : (
+                  <QRCodeFallback value={product.barcode} colors={colors} />
+                )}
               </View>
               <Text style={[styles.qrCodeText, { color: colors.inactive }]}>
                 Code: {product.barcode}

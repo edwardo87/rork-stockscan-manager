@@ -5,7 +5,7 @@ import { Info, Wrench, FileText, BookOpen } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { trpcClient } from '@/lib/trpc';
-import { GoogleSheetsIntegration } from '@/components/GoogleSheetsIntegration';
+
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -152,8 +152,7 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* Google Sheets Integration Section */}
-      <GoogleSheetsIntegration />
+
 
       {/* Help & About Section */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>

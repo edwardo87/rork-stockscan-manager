@@ -185,15 +185,40 @@ export default function ProductDetailsScreen() {
       const productData = `${product.name}\nSKU: ${product.sku}\nBarcode: ${product.barcode}\nCategory: ${product.category}\nSupplier: ${product.supplier}\nCurrent Stock: ${product.currentStock} ${product.unit}`;
       
       if (Platform.OS === 'web') {
-        if (navigator.share) {
-          await navigator.share({
-            title: product.name,
-            text: productData,
-          });
+        // Check if Web Share API is available and supported
+        if (navigator.share && navigator.canShare && navigator.canShare({ text: productData })) {
+          try {
+            await navigator.share({
+              title: product.name,
+              text: productData,
+            });
+          } catch (shareError: any) {
+            // If share fails, fall back to clipboard
+            if (shareError.name === 'NotAllowedError' || shareError.name === 'AbortError') {
+              await navigator.clipboard.writeText(productData);
+              Alert.alert('Copied', 'Product information copied to clipboard');
+            } else {
+              throw shareError;
+            }
+          }
         } else {
           // Fallback for web browsers without native sharing
-          await navigator.clipboard.writeText(productData);
-          Alert.alert('Copied', 'Product information copied to clipboard');
+          try {
+            await navigator.clipboard.writeText(productData);
+            Alert.alert('Copied', 'Product information copied to clipboard');
+          } catch (clipboardError) {
+            // Final fallback - create a downloadable text file
+            const blob = new Blob([productData], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `product-${product.sku}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            Alert.alert('Downloaded', 'Product information downloaded as text file');
+          }
         }
       } else {
         const fileUri = FileSystem.documentDirectory + `product-${product.sku}.txt`;
@@ -204,6 +229,8 @@ export default function ProductDetailsScreen() {
             mimeType: 'text/plain',
             dialogTitle: `Share ${product.name}`,
           });
+        } else {
+          Alert.alert('Sharing not available', 'Sharing is not available on this device.');
         }
       }
     } catch (error) {

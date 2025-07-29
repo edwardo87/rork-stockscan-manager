@@ -80,6 +80,7 @@ export default function OrderScreen() {
         <Scanner 
           onBarcodeScan={handleBarcodeScan}
           onClose={() => setShowScanner(false)}
+          mode="order"
         />
       ) : (
         <>

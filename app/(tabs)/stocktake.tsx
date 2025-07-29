@@ -30,11 +30,20 @@ export default function StocktakeScreen() {
     
     if (product) {
       addToStocktake(product, product.currentStock);
+      // Show success feedback
+      Alert.alert(
+        "Product Added",
+        `Added ${product.name} to stocktake`,
+        [{ text: "OK" }]
+      );
     } else {
       Alert.alert(
         "Product Not Found",
-        `No product found with barcode: ${barcode}`,
-        [{ text: "OK" }]
+        `No product found with barcode: ${barcode}. Please try scanning again.`,
+        [{ 
+          text: "Try Again",
+          onPress: () => setShowScanner(true)
+        }]
       );
     }
   };
@@ -71,6 +80,7 @@ export default function StocktakeScreen() {
         <Scanner 
           onBarcodeScan={handleBarcodeScan}
           onClose={() => setShowScanner(false)}
+          mode="stocktake"
         />
       ) : (
         <>

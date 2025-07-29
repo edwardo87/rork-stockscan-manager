@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { Plus, Minus, ShoppingBag, ArrowLeft } from 'lucide-react-native';
+import { Plus, Minus, ShoppingBag, ArrowLeft, Eye } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
+import { useRouter } from 'expo-router';
 import { Product } from '@/types/inventory';
 
 interface ScannerProps {
   onClose: () => void;
-  onBarcodeScan: (barcode: string, quantity: number) => void;
+  onBarcodeScan: (barcode: string, quantity?: number) => void;
+  mode?: 'order' | 'stocktake' | 'view';
 }
 
-export default function Scanner({ onClose, onBarcodeScan }: ScannerProps) {
+export default function Scanner({ onClose, onBarcodeScan, mode = 'order' }: ScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +21,7 @@ export default function Scanner({ onClose, onBarcodeScan }: ScannerProps) {
   const [scannedProduct, setScannedProduct] = useState<Product | null>(null);
   const { colors } = useThemeStore();
   const { getProductByBarcode } = useInventoryStore();
+  const router = useRouter();
 
   if (!permission) {
     return <View />;
@@ -62,12 +65,23 @@ export default function Scanner({ onClose, onBarcodeScan }: ScannerProps) {
 
   const handleAddToOrder = () => {
     if (scannedProduct) {
-      onBarcodeScan(scannedProduct.barcode, quantity);
+      if (mode === 'order') {
+        onBarcodeScan(scannedProduct.barcode, quantity);
+      } else {
+        onBarcodeScan(scannedProduct.barcode);
+      }
       // Reset for next scan
       setScanned(false);
       setScannedProduct(null);
       setQuantity(1);
       setError(null);
+    }
+  };
+
+  const handleViewProduct = () => {
+    if (scannedProduct) {
+      onClose();
+      router.push(`/product/${scannedProduct.id}`);
     }
   };
 
@@ -129,15 +143,27 @@ export default function Scanner({ onClose, onBarcodeScan }: ScannerProps) {
               </TouchableOpacity>
             </View>
             
-            <TouchableOpacity 
-              style={[styles.addButton, { backgroundColor: colors.primary }]}
-              onPress={handleAddToOrder}
-            >
-              <ShoppingBag size={20} color={colors.background} />
-              <Text style={[styles.addButtonText, { color: colors.background }]}>
-                Add to Order
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity 
+                style={[styles.addButton, { backgroundColor: colors.primary }]}
+                onPress={handleAddToOrder}
+              >
+                <ShoppingBag size={20} color={colors.background} />
+                <Text style={[styles.addButtonText, { color: colors.background }]}>
+                  {mode === 'order' ? 'Add to Order' : mode === 'stocktake' ? 'Add to Stocktake' : 'Add'}
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.viewButton, { borderColor: colors.primary }]}
+                onPress={handleViewProduct}
+              >
+                <Eye size={20} color={colors.primary} />
+                <Text style={[styles.viewButtonText, { color: colors.primary }]}>
+                  View Details
+                </Text>
+              </TouchableOpacity>
+            </View>
             
             <TouchableOpacity 
               style={[styles.scanAgainButton, { borderColor: colors.border }]}
@@ -266,19 +292,6 @@ const styles = StyleSheet.create({
     minWidth: 40,
     textAlign: 'center',
   },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  addButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
   scanAgainButton: {
     padding: 14,
     borderRadius: 12,
@@ -300,5 +313,38 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    gap: 12,
+  },
+  addButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+  },
+  addButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  viewButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    backgroundColor: 'transparent',
+  },
+  viewButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });

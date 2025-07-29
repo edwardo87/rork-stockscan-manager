@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Edit, ShoppingBag, ClipboardList } from 'lucide-react-native';
+import { Edit, ShoppingBag, ClipboardList, QrCode } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import QuantityInput from '@/components/QuantityInput';
+import { BarCodeCreator } from 'expo-barcode-generator';
 
 export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -128,6 +129,27 @@ export default function ProductDetailsScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* QR Code Section */}
+            <View style={[styles.section, { borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>QR Code</Text>
+              <Text style={[styles.qrDescription, { color: colors.inactive }]}>
+                Scan this QR code to quickly access this product
+              </Text>
+              <View style={styles.qrContainer}>
+                <BarCodeCreator
+                  value={product.barcode}
+                  format="QR"
+                  width={200}
+                  height={200}
+                  background={colors.background}
+                  color={colors.text}
+                />
+              </View>
+              <Text style={[styles.qrCodeText, { color: colors.inactive }]}>
+                Code: {product.barcode}
+              </Text>
+            </View>
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
@@ -211,5 +233,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginTop: 24,
+  },
+  qrDescription: {
+    fontSize: 14,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  qrContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    padding: 16,
+  },
+  qrCodeText: {
+    fontSize: 12,
+    textAlign: 'center',
+    fontFamily: 'monospace',
   },
 });

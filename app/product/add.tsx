@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Save, Package } from 'lucide-react-native';
+import { Save, X, Package } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { Product } from '@/types/inventory';
@@ -9,215 +9,315 @@ import { Product } from '@/types/inventory';
 export default function AddProductScreen() {
   const router = useRouter();
   const { colors } = useThemeStore();
-  const { addProduct } = useInventoryStore();
+  const { products, addProduct } = useInventoryStore();
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<Partial<Product>>({
     name: '',
+    description: '',
     sku: '',
     barcode: '',
     category: '',
     supplier: '',
-    currentStock: '',
-    minStock: '',
-    price: '',
-    cost: '',
-    unit: 'pcs',
-    description: '',
+    price: 0,
+    cost: 0,
+    currentStock: 0,
+    minStock: 0,
+    unit: 'each',
   });
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSave = () => {
-    if (!formData.name.trim() || !formData.sku.trim()) {
-      Alert.alert('Error', 'Product name and SKU are required');
-      return;
-    }
-
-    const newProduct: Omit<Product, 'id'> = {
-      name: formData.name.trim(),
-      sku: formData.sku.trim(),
-      barcode: formData.barcode.trim() || `SKU-${formData.sku.trim()}`,
-      category: formData.category.trim() || 'General',
-      supplier: formData.supplier.trim() || 'Unknown',
-      currentStock: parseInt(formData.currentStock) || 0,
-      minStock: parseInt(formData.minStock) || 0,
-      price: parseFloat(formData.price) || 0,
-      cost: parseFloat(formData.cost) || 0,
-      unit: formData.unit,
-      description: formData.description.trim(),
-    };
-
-    addProduct(newProduct);
-    Alert.alert('Success', 'Product added successfully', [
-      { text: 'OK', onPress: () => router.back() }
-    ]);
-  };
-
-  const updateFormData = (field: string, value: string) => {
+  const handleInputChange = (field: keyof Product, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const generateId = () => {
+    return 'PROD_' + Date.now().toString() + '_' + Math.random().toString(36).substr(2, 5);
+  };
+
+  const generateBarcode = () => {
+    const timestamp = Date.now().toString();
+    const random = Math.random().toString().substr(2, 4);
+    return timestamp.substr(-8) + random;
+  };
+
+  const validateForm = (): boolean => {
+    if (!formData.name?.trim()) {
+      Alert.alert('Validation Error', 'Product name is required');
+      return false;
+    }
+    
+    if (!formData.sku?.trim()) {
+      Alert.alert('Validation Error', 'SKU is required');
+      return false;
+    }
+    
+    if (formData.price === undefined || formData.price < 0) {
+      Alert.alert('Validation Error', 'Price must be a positive number');
+      return false;
+    }
+    
+    if (formData.cost === undefined || formData.cost < 0) {
+      Alert.alert('Validation Error', 'Cost must be a positive number');
+      return false;
+    }
+    
+    if (formData.currentStock === undefined || formData.currentStock < 0) {
+      Alert.alert('Validation Error', 'Current stock must be a positive number');
+      return false;
+    }
+    
+    if (formData.minStock === undefined || formData.minStock < 0) {
+      Alert.alert('Validation Error', 'Minimum stock must be a positive number');
+      return false;
+    }
+    
+    // Check if SKU already exists
+    const existingSku = products.find(p => p.sku.toLowerCase() === formData.sku?.toLowerCase());
+    if (existingSku) {
+      Alert.alert('Validation Error', 'A product with this SKU already exists');
+      return false;
+    }
+    
+    return true;
+  };
+
+  const handleSave = async () => {
+    if (!validateForm()) return;
+    
+    setIsSubmitting(true);
+    
+    try {
+      const newProduct: Product = {
+        id: generateId(),
+        name: formData.name!.trim(),
+        description: formData.description?.trim() || formData.name!.trim(),
+        sku: formData.sku!.trim(),
+        barcode: formData.barcode?.trim() || generateBarcode(),
+        category: formData.category?.trim() || 'Uncategorized',
+        supplier: formData.supplier?.trim() || 'Unknown Supplier',
+        price: Number(formData.price),
+        cost: Number(formData.cost),
+        currentStock: Number(formData.currentStock),
+        minStock: Number(formData.minStock),
+        unit: formData.unit || 'each',
+      };
+      
+      addProduct(newProduct);
+      
+      Alert.alert(
+        'Success',
+        'Product has been added successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.back()
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        'Failed to add product. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancel = () => {
+    Alert.alert(
+      'Discard Changes',
+      'Are you sure you want to discard your changes?',
+      [
+        { text: 'Keep Editing', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: () => router.back() }
+      ]
+    );
+  };
+
   return (
-    <>
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <Stack.Screen 
         options={{
           title: 'Add Product',
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerRight: () => (
-            <TouchableOpacity 
-              style={[styles.saveButton, { backgroundColor: colors.primary }]}
-              onPress={handleSave}
-            >
-              <Save size={20} color={colors.background} />
+            <TouchableOpacity onPress={handleCancel}>
+              <X size={24} color={colors.text} />
             </TouchableOpacity>
           ),
         }} 
       />
       
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      <ScrollView 
         style={[styles.container, { backgroundColor: colors.lightGray }]}
+        contentContainerStyle={styles.scrollContent}
       >
-        <ScrollView style={styles.scrollView}>
-          <View style={[styles.section, { backgroundColor: colors.background }]}>
-            <View style={[styles.iconContainer, { backgroundColor: colors.lightGray }]}>
-              <Package size={24} color={colors.primary} />
-            </View>
+        <View style={[styles.section, { backgroundColor: colors.background }]}>
+          <View style={styles.sectionHeader}>
+            <Package size={20} color={colors.primary} />
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Product Information</Text>
-            
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text }]}>Product Name *</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
-                value={formData.name}
-                onChangeText={(value) => updateFormData('name', value)}
-                placeholder="Enter product name"
-                placeholderTextColor={colors.inactive}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
+          </View>
+          
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Product Name *</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+              value={formData.name}
+              onChangeText={(value) => handleInputChange('name', value)}
+              placeholder="Enter product name"
+              placeholderTextColor={colors.inactive}
+            />
+          </View>
+          
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.textArea, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+              value={formData.description}
+              onChangeText={(value) => handleInputChange('description', value)}
+              placeholder="Enter product description"
+              placeholderTextColor={colors.inactive}
+              multiline
+              numberOfLines={3}
+            />
+          </View>
+          
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.halfWidth]}>
               <Text style={[styles.label, { color: colors.text }]}>SKU *</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
                 value={formData.sku}
-                onChangeText={(value) => updateFormData('sku', value)}
+                onChangeText={(value) => handleInputChange('sku', value)}
                 placeholder="Enter SKU"
                 placeholderTextColor={colors.inactive}
+                autoCapitalize="characters"
               />
             </View>
-
-            <View style={styles.inputGroup}>
+            
+            <View style={[styles.inputGroup, styles.halfWidth]}>
               <Text style={[styles.label, { color: colors.text }]}>Barcode</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
                 value={formData.barcode}
-                onChangeText={(value) => updateFormData('barcode', value)}
-                placeholder="Enter barcode (optional)"
+                onChangeText={(value) => handleInputChange('barcode', value)}
+                placeholder="Auto-generated"
                 placeholderTextColor={colors.inactive}
               />
             </View>
-
-            <View style={styles.inputGroup}>
+          </View>
+          
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.halfWidth]}>
               <Text style={[styles.label, { color: colors.text }]}>Category</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
                 value={formData.category}
-                onChangeText={(value) => updateFormData('category', value)}
+                onChangeText={(value) => handleInputChange('category', value)}
                 placeholder="Enter category"
                 placeholderTextColor={colors.inactive}
               />
             </View>
-
-            <View style={styles.inputGroup}>
+            
+            <View style={[styles.inputGroup, styles.halfWidth]}>
               <Text style={[styles.label, { color: colors.text }]}>Supplier</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
                 value={formData.supplier}
-                onChangeText={(value) => updateFormData('supplier', value)}
+                onChangeText={(value) => handleInputChange('supplier', value)}
                 placeholder="Enter supplier"
                 placeholderTextColor={colors.inactive}
               />
             </View>
-
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={[styles.label, { color: colors.text }]}>Current Stock</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
-                  value={formData.currentStock}
-                  onChangeText={(value) => updateFormData('currentStock', value)}
-                  placeholder="0"
-                  placeholderTextColor={colors.inactive}
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={[styles.label, { color: colors.text }]}>Min Stock</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
-                  value={formData.minStock}
-                  onChangeText={(value) => updateFormData('minStock', value)}
-                  placeholder="0"
-                  placeholderTextColor={colors.inactive}
-                  keyboardType="numeric"
-                />
-              </View>
-            </View>
-
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={[styles.label, { color: colors.text }]}>Price</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
-                  value={formData.price}
-                  onChangeText={(value) => updateFormData('price', value)}
-                  placeholder="0.00"
-                  placeholderTextColor={colors.inactive}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={[styles.label, { color: colors.text }]}>Cost</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
-                  value={formData.cost}
-                  onChangeText={(value) => updateFormData('cost', value)}
-                  placeholder="0.00"
-                  placeholderTextColor={colors.inactive}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text }]}>Unit</Text>
+          </View>
+        </View>
+        
+        <View style={[styles.section, { backgroundColor: colors.background }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Pricing & Stock</Text>
+          
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Cost Price *</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
-                value={formData.unit}
-                onChangeText={(value) => updateFormData('unit', value)}
-                placeholder="pcs"
+                value={formData.cost?.toString()}
+                onChangeText={(value) => handleInputChange('cost', parseFloat(value) || 0)}
+                placeholder="0.00"
                 placeholderTextColor={colors.inactive}
+                keyboardType="decimal-pad"
               />
             </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text }]}>Description</Text>
+            
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Selling Price *</Text>
               <TextInput
-                style={[styles.textArea, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
-                value={formData.description}
-                onChangeText={(value) => updateFormData('description', value)}
-                placeholder="Enter product description (optional)"
+                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+                value={formData.price?.toString()}
+                onChangeText={(value) => handleInputChange('price', parseFloat(value) || 0)}
+                placeholder="0.00"
                 placeholderTextColor={colors.inactive}
-                multiline
-                numberOfLines={3}
+                keyboardType="decimal-pad"
               />
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </>
+          
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Current Stock *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+                value={formData.currentStock?.toString()}
+                onChangeText={(value) => handleInputChange('currentStock', parseInt(value) || 0)}
+                placeholder="0"
+                placeholderTextColor={colors.inactive}
+                keyboardType="number-pad"
+              />
+            </View>
+            
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Minimum Stock *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+                value={formData.minStock?.toString()}
+                onChangeText={(value) => handleInputChange('minStock', parseInt(value) || 0)}
+                placeholder="0"
+                placeholderTextColor={colors.inactive}
+                keyboardType="number-pad"
+              />
+            </View>
+          </View>
+          
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Unit</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+              value={formData.unit}
+              onChangeText={(value) => handleInputChange('unit', value)}
+              placeholder="each"
+              placeholderTextColor={colors.inactive}
+            />
+          </View>
+        </View>
+        
+        <TouchableOpacity 
+          style={[styles.saveButton, { backgroundColor: colors.primary }]}
+          onPress={handleSave}
+          disabled={isSubmitting}
+        >
+          <Save size={20} color={colors.background} />
+          <Text style={[styles.saveButtonText, { color: colors.background }]}>
+            {isSubmitting ? 'Adding Product...' : 'Add Product'}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -225,66 +325,61 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollView: {
-    flex: 1,
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 32,
   },
   section: {
-    margin: 16,
+    borderRadius: 12,
     padding: 20,
-    borderRadius: 16,
+    marginBottom: 16,
   },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  sectionHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
     marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 24,
+    fontSize: 18,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   label: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
     marginBottom: 8,
   },
   input: {
-    height: 48,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 16,
     borderWidth: 1,
-  },
-  textArea: {
-    minHeight: 80,
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    borderRadius: 8,
+    paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    borderWidth: 1,
+  },
+  textArea: {
+    height: 80,
     textAlignVertical: 'top',
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
   },
   halfWidth: {
-    width: '48%',
+    flex: 1,
   },
   saveButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  saveButtonText: {
+    fontSize: 18,
+    fontWeight: '600',
   },
 });

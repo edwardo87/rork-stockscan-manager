@@ -20,6 +20,7 @@ interface InventoryState {
   
   // Product Management
   setProducts: (products: Product[]) => void;
+  addProduct: (product: Product) => void;
   loadProductsFromSheets: () => Promise<void>;
   getProductByBarcode: (barcode: string) => Product | undefined;
   updateProductStock: (productId: string, newStock: number) => void;
@@ -61,6 +62,11 @@ export const useInventoryStore = create<InventoryState>()(
 
       setProducts: (products) => set({ products, lastSyncTime: new Date().toISOString() }),
       
+      addProduct: (product) => set((state) => ({
+        products: [...state.products, product],
+        lastSyncTime: new Date().toISOString()
+      })),
+      
       loadProductsFromSheets: async () => {
         const state = get();
         if (!state.isGoogleSheetsEnabled) return;
@@ -101,14 +107,14 @@ export const useInventoryStore = create<InventoryState>()(
             product.id === productId
               ? { ...product, ...updatedProduct }
               : product
-          )
+          ),
+          lastSyncTime: new Date().toISOString()
         });
         
         // Sync to Google Sheets if enabled
         if (state.isGoogleSheetsEnabled) {
           try {
             await trpcClient.products.updateProduct.mutate(updatedProduct);
-            set({ lastSyncTime: new Date().toISOString() });
           } catch (error) {
             console.error('Failed to sync product update to Google Sheets:', error);
             // Don't throw error to avoid breaking local functionality

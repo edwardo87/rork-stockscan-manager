@@ -5,47 +5,11 @@ import { Edit, ShoppingBag, ClipboardList, Printer, Share } from 'lucide-react-n
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import QuantityInput from '@/components/QuantityInput';
-import Svg, { Rect } from 'react-native-svg';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
-
-// Simple QR Code generator using SVG
-const generateQRMatrix = (text: string, size: number = 21): boolean[][] => {
-  // Simple QR code pattern generator (basic implementation)
-  const matrix: boolean[][] = [];
-  for (let i = 0; i < size; i++) {
-    matrix[i] = [];
-    for (let j = 0; j < size; j++) {
-      // Create a pattern based on text hash and position
-      const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      matrix[i][j] = ((i + j + hash) % 3) === 0;
-    }
-  }
-  
-  // Add finder patterns (corners)
-  const addFinderPattern = (startRow: number, startCol: number) => {
-    for (let i = 0; i < 7; i++) {
-      for (let j = 0; j < 7; j++) {
-        if (startRow + i < size && startCol + j < size) {
-          matrix[startRow + i][startCol + j] = 
-            (i === 0 || i === 6 || j === 0 || j === 6) ||
-            (i >= 2 && i <= 4 && j >= 2 && j <= 4);
-        }
-      }
-    }
-  };
-  
-  addFinderPattern(0, 0);
-  addFinderPattern(0, size - 7);
-  addFinderPattern(size - 7, 0);
-  
-  return matrix;
-};
+import { BarCodeCreator } from 'expo-barcode-generator';
 
 const QRCodeComponent = ({ value, size = 200, colors }: { value: string; size?: number; colors: any }) => {
-  const matrix = generateQRMatrix(value);
-  const cellSize = size / matrix.length;
-  
   return (
     <View style={{
       width: size,
@@ -55,27 +19,17 @@ const QRCodeComponent = ({ value, size = 200, colors }: { value: string; size?: 
       borderRadius: 8,
       borderWidth: 1,
       borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
     }}>
-      <Svg width={size - 20} height={size - 20}>
-        <Rect width={size - 20} height={size - 20} fill={colors.background} />
-        {matrix.map((row, i) =>
-          row.map((cell, j) => {
-            if (cell) {
-              return (
-                <Rect
-                  key={`${i}-${j}`}
-                  x={j * cellSize}
-                  y={i * cellSize}
-                  width={cellSize}
-                  height={cellSize}
-                  fill={colors.text}
-                />
-              );
-            }
-            return null;
-          })
-        )}
-      </Svg>
+      <BarCodeCreator
+        value={value}
+        format="QR"
+        width={size - 20}
+        height={size - 20}
+        color={colors.text}
+        background={colors.background}
+      />
     </View>
   );
 };
@@ -115,42 +69,84 @@ export default function ProductDetailsScreen() {
   const handlePrintQR = async () => {
     try {
       if (Platform.OS === 'web') {
-        // Web printing
+        // Web printing with shelf label format
         const printWindow = window.open('', '_blank');
         if (printWindow) {
           printWindow.document.write(`
             <html>
               <head>
-                <title>QR Code - ${product.name}</title>
+                <title>QR Code Label - ${product.name}</title>
                 <style>
+                  @media print {
+                    @page {
+                      margin: 10mm;
+                      size: A4;
+                    }
+                  }
                   body { 
-                    font-family: Arial, sans-serif; 
-                    text-align: center; 
+                    font-family: Arial, sans-serif;
+                    margin: 0;
                     padding: 20px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 100vh;
                   }
-                  .qr-container {
-                    display: inline-block;
+                  .qr-label {
+                    width: 60mm;
+                    height: 40mm;
                     border: 2px solid #000;
-                    padding: 20px;
-                    margin: 20px;
+                    padding: 5mm;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    text-align: center;
+                    box-sizing: border-box;
                   }
-                  .product-info {
-                    margin-top: 10px;
-                    font-size: 14px;
+                  .qr-code {
+                    width: 30mm;
+                    height: 30mm;
+                    border: 1px solid #ccc;
+                    margin-bottom: 2mm;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 8px;
+                    background: #f9f9f9;
+                  }
+                  .product-name {
+                    font-size: 10px;
+                    font-weight: bold;
+                    margin-bottom: 1mm;
+                    line-height: 1.1;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    width: 100%;
+                  }
+                  .product-sku {
+                    font-size: 8px;
+                    color: #666;
+                    margin-bottom: 1mm;
+                  }
+                  .product-barcode {
+                    font-size: 7px;
+                    color: #888;
+                    font-family: monospace;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    width: 100%;
                   }
                 </style>
               </head>
               <body>
-                <div class="qr-container">
-                  <h2>${product.name}</h2>
-                  <div style="width: 200px; height: 200px; border: 1px solid #ccc; margin: 0 auto; display: flex; align-items: center; justify-content: center;">
-                    QR Code: ${product.barcode}
-                  </div>
-                  <div class="product-info">
-                    <p><strong>SKU:</strong> ${product.sku}</p>
-                    <p><strong>Barcode:</strong> ${product.barcode}</p>
-                    <p><strong>Category:</strong> ${product.category}</p>
-                  </div>
+                <div class="qr-label">
+                  <div class="qr-code">QR: ${product.barcode}</div>
+                  <div class="product-name">${product.name}</div>
+                  <div class="product-sku">${product.sku}</div>
+                  <div class="product-barcode">${product.barcode}</div>
                 </div>
               </body>
             </html>

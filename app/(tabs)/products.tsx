@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Search, Filter, Plus, Upload, FileText } from 'lucide-react-native';
+import { Search, Filter, Plus, Upload, FileText, QrCode } from 'lucide-react-native';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useThemeStore } from '@/store/themeStore';
 import ProductCard from '@/components/ProductCard';
@@ -119,6 +119,10 @@ export default function ProductsScreen() {
     setShowUploadOptions(false);
   };
 
+  const handlePrintQRCodes = () => {
+    router.push('/qr-codes-print');
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
@@ -151,6 +155,13 @@ export default function ProductsScreen() {
           >
             <Upload size={20} color={colors.background} />
             <Text style={[styles.uploadButtonText, { color: colors.background }]}>Upload Stock</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.qrButton, { backgroundColor: colors.secondary }]}
+            onPress={handlePrintQRCodes}
+          >
+            <QrCode size={20} color={colors.background} />
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -292,6 +303,13 @@ const styles = StyleSheet.create({
   uploadButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  qrButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addButton: {
     width: 44,

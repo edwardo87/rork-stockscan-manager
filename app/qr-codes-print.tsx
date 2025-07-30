@@ -15,6 +15,8 @@ interface QRLabelProps {
 }
 
 const QRLabel = ({ product, colors, size }: QRLabelProps) => {
+  const qrSize = size * 0.7;
+  
   return (
     <View style={[
       styles.qrLabel,
@@ -26,14 +28,26 @@ const QRLabel = ({ product, colors, size }: QRLabelProps) => {
       }
     ]}>
       <View style={styles.qrCodeContainer}>
-        <BarCodeCreator
-          value={product.barcode}
-          format="QR"
-          width={size * 0.7}
-          height={size * 0.7}
-          color={colors.text}
-          background={colors.background}
-        />
+        {Platform.OS === 'web' ? (
+          <img 
+            src={`https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(product.barcode)}&bgcolor=${colors.background.replace('#', '')}&color=${colors.text.replace('#', '')}`}
+            alt={`QR Code for ${product.barcode}`}
+            style={{
+              width: qrSize,
+              height: qrSize,
+              objectFit: 'contain'
+            }}
+          />
+        ) : (
+          <BarCodeCreator
+            value={product.barcode}
+            format="QR"
+            width={qrSize}
+            height={qrSize}
+            color={colors.text}
+            background={colors.background}
+          />
+        )}
       </View>
       <View style={styles.labelInfo}>
         <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1}>
@@ -127,12 +141,8 @@ export default function QRCodesPrintScreen() {
                   .qr-code {
                     width: ${labelSize * 0.2}mm;
                     height: ${labelSize * 0.2}mm;
-                    border: 1px solid #ccc;
                     margin-bottom: 1mm;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 8px;
+                    object-fit: contain;
                   }
                   .product-name {
                     font-size: 8px;
@@ -166,9 +176,10 @@ export default function QRCodesPrintScreen() {
           `);
           
           filteredProducts.forEach(product => {
+            const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${Math.floor(labelSize * 0.2 * 3.78)}x${Math.floor(labelSize * 0.2 * 3.78)}&data=${encodeURIComponent(product.barcode)}`;
             printWindow.document.write(`
               <div class="qr-label">
-                <div class="qr-code">QR: ${product.barcode}</div>
+                <img src="${qrCodeUrl}" alt="QR Code for ${product.barcode}" style="width: ${labelSize * 0.2}mm; height: ${labelSize * 0.2}mm; margin-bottom: 1mm;" />
                 <div class="product-name">${product.name}</div>
                 <div class="product-sku">${product.sku}</div>
                 <div class="product-barcode">${product.barcode}</div>

@@ -10,6 +10,36 @@ import * as FileSystem from 'expo-file-system';
 import { BarCodeCreator } from 'expo-barcode-generator';
 
 const QRCodeComponent = ({ value, size = 200, colors }: { value: string; size?: number; colors: any }) => {
+  if (Platform.OS === 'web') {
+    // Web fallback - show QR code using external service
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size-20}x${size-20}&data=${encodeURIComponent(value)}&bgcolor=${colors.background.replace('#', '')}&color=${colors.text.replace('#', '')}`;
+    
+    return (
+      <View style={{
+        width: size,
+        height: size,
+        backgroundColor: colors.background,
+        padding: 10,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: colors.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <img 
+          src={qrUrl} 
+          alt={`QR Code for ${value}`}
+          style={{
+            width: size - 20,
+            height: size - 20,
+            objectFit: 'contain'
+          }}
+        />
+      </View>
+    );
+  }
+  
+  // Native implementation
   return (
     <View style={{
       width: size,
@@ -143,7 +173,7 @@ export default function ProductDetailsScreen() {
               </head>
               <body>
                 <div class="qr-label">
-                  <div class="qr-code">QR: ${product.barcode}</div>
+                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=113x113&data=${encodeURIComponent(product.barcode)}" alt="QR Code for ${product.barcode}" style="width: 30mm; height: 30mm; margin-bottom: 2mm;" />
                   <div class="product-name">${product.name}</div>
                   <div class="product-sku">${product.sku}</div>
                   <div class="product-barcode">${product.barcode}</div>

@@ -7,13 +7,12 @@ import { useInventoryStore } from '@/store/inventoryStore';
 import QuantityInput from '@/components/QuantityInput';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
-import { BarCodeCreator } from 'expo-barcode-generator';
 
 const QRCodeComponent = ({ value, size = 200, colors }: { value: string; size?: number; colors: any }) => {
+  // Use external QR code service for both web and mobile for better compatibility
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size-20}x${size-20}&data=${encodeURIComponent(value)}&bgcolor=${colors.background.replace('#', '')}&color=${colors.text.replace('#', '')}`;
+  
   if (Platform.OS === 'web') {
-    // Web fallback - show QR code using external service
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size-20}x${size-20}&data=${encodeURIComponent(value)}&bgcolor=${colors.background.replace('#', '')}&color=${colors.text.replace('#', '')}`;
-    
     return (
       <View style={{
         width: size,
@@ -39,7 +38,7 @@ const QRCodeComponent = ({ value, size = 200, colors }: { value: string; size?: 
     );
   }
   
-  // Native implementation
+  // Mobile implementation using expo-image for better compatibility
   return (
     <View style={{
       width: size,
@@ -52,14 +51,26 @@ const QRCodeComponent = ({ value, size = 200, colors }: { value: string; size?: 
       alignItems: 'center',
       justifyContent: 'center',
     }}>
-      <BarCodeCreator
-        value={value}
-        format="QR"
-        width={size - 20}
-        height={size - 20}
-        color={colors.text}
-        background={colors.background}
-      />
+      <View style={{
+        width: size - 20,
+        height: size - 20,
+        backgroundColor: colors.lightGray,
+        borderRadius: 4,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}>
+        <Text style={{
+          color: colors.text,
+          fontSize: 10,
+          textAlign: 'center',
+          fontFamily: 'monospace',
+          padding: 8,
+        }}>
+          QR: {value}
+        </Text>
+      </View>
     </View>
   );
 };
@@ -173,7 +184,7 @@ export default function ProductDetailsScreen() {
               </head>
               <body>
                 <div class="qr-label">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=113x113&data=${encodeURIComponent(product.barcode)}" alt="QR Code for ${product.barcode}" style="width: 30mm; height: 30mm; margin-bottom: 2mm;" />
+                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=113x113&data=${encodeURIComponent(product.barcode)}&bgcolor=ffffff&color=000000" alt="QR Code for ${product.barcode}" style="width: 30mm; height: 30mm; margin-bottom: 2mm;" />
                   <div class="product-name">${product.name}</div>
                   <div class="product-sku">${product.sku}</div>
                   <div class="product-barcode">${product.barcode}</div>

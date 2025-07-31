@@ -145,6 +145,48 @@ function RootLayoutNav() {
             presentation: "card",
           }} 
         />
+        <Stack.Screen 
+          name="product/edit/[id]" 
+          options={{ 
+            title: "Edit Product",
+            presentation: "card",
+          }} 
+        />
+        <Stack.Screen 
+          name="product/add" 
+          options={{ 
+            title: "Add Product",
+            presentation: "card",
+          }} 
+        />
+        <Stack.Screen 
+          name="qr-codes-print" 
+          options={{ 
+            title: "Print QR Codes",
+            presentation: "card",
+          }} 
+        />
+        <Stack.Screen 
+          name="about" 
+          options={{ 
+            title: "About",
+            presentation: "card",
+          }} 
+        />
+        <Stack.Screen 
+          name="how-to-use" 
+          options={{ 
+            title: "How to Use",
+            presentation: "card",
+          }} 
+        />
+        <Stack.Screen 
+          name="coming-soon" 
+          options={{ 
+            title: "Coming Soon",
+            presentation: "card",
+          }} 
+        />
       </Stack>
     </>
   );

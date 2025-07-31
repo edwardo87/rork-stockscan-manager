@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { Printer, ArrowLeft, Grid, List } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
-import { BarCodeCreator } from 'expo-barcode-generator';
+
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 
@@ -39,14 +39,26 @@ const QRLabel = ({ product, colors, size }: QRLabelProps) => {
             }}
           />
         ) : (
-          <BarCodeCreator
-            value={product.barcode}
-            format="QR"
-            width={qrSize}
-            height={qrSize}
-            color={colors.text}
-            background={colors.background}
-          />
+          <View style={{
+            width: qrSize,
+            height: qrSize,
+            backgroundColor: colors.lightGray,
+            borderRadius: 4,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}>
+            <Text style={{
+              color: colors.text,
+              fontSize: 8,
+              textAlign: 'center',
+              fontFamily: 'monospace',
+              padding: 4,
+            }}>
+              QR: {product.barcode}
+            </Text>
+          </View>
         )}
       </View>
       <View style={styles.labelInfo}>

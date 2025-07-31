@@ -4,14 +4,6 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, Mail, Globe } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import SmartStockLogo from '@/components/SmartStockLogo';
-import Animated, { 
-  FadeIn,
-  FadeInRight,
-  FadeInUp,
-  SlideInDown
-} from 'react-native-reanimated';
-
-const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
 export default function AboutScreen() {
   const router = useRouter();
@@ -49,30 +41,21 @@ export default function AboutScreen() {
       >
         <View style={styles.content}>
           {/* Logo and Tagline */}
-          <Animated.View 
-            entering={FadeIn.delay(200)}
-            style={styles.logoContainer}
-          >
+          <View style={styles.logoContainer}>
             <SmartStockLogo size="large" />
-          </Animated.View>
+          </View>
 
-          <Animated.Text 
-            entering={FadeInUp.delay(400)}
-            style={[styles.tagline, { color: colors.text }]}
-          >
+          <Text style={[styles.tagline, { color: colors.text }]}>
             Smarter Stock. Simpler Workdays.
-          </Animated.Text>
+          </Text>
 
           {/* Intro */}
-          <Animated.Text 
-            entering={FadeInUp.delay(600)}
-            style={[styles.description, { color: colors.inactive }]}
-          >
-            Running a business is hard enough without chasing missing parts or drowning in spreadsheets. That's why we built SmartStock — a sleek, powerful inventory tool designed for businesses that don't have time to waste.
-          </Animated.Text>
+          <Text style={[styles.description, { color: colors.inactive }]}>
+            Running a business is hard enough without chasing missing parts or drowning in spreadsheets. That&apos;s why we built SmartStock — a sleek, powerful inventory tool designed for businesses that don&apos;t have time to waste.
+          </Text>
 
           {/* Why We Built It */}
-          <Animated.View entering={FadeInRight.delay(800)}>
+          <View>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Why We Built It
             </Text>
@@ -84,19 +67,19 @@ export default function AboutScreen() {
                 ❌ Stockouts at the worst time
               </Text>
               <Text style={[styles.bulletPoint, { color: colors.error }]}>
-                ❌ Over-ordering just to feel "safe"
+                ❌ Over-ordering just to feel &quot;safe&quot;
               </Text>
               <Text style={[styles.bulletPoint, { color: colors.error }]}>
-                ❌ Reordering systems that don't... work
+                ❌ Reordering systems that don&apos;t... work
               </Text>
             </View>
             <Text style={[styles.description, { color: colors.inactive }]}>
               SmartStock fixes that — with clarity, automation, and simplicity.
             </Text>
-          </Animated.View>
+          </View>
 
           {/* Key Features */}
-          <Animated.View entering={FadeInRight.delay(1000)}>
+          <View>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Key Features
             </Text>
@@ -117,27 +100,24 @@ export default function AboutScreen() {
                 🔹 Clean, Fast, Reliable UI
               </Text>
             </View>
-          </Animated.View>
+          </View>
 
           {/* Founder's Note */}
-          <Animated.View 
-            entering={SlideInDown.delay(1200)}
-            style={[styles.quoteContainer, { backgroundColor: colors.lightGray }]}
-          >
+          <View style={[styles.quoteContainer, { backgroundColor: colors.lightGray }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Founder's Note
+              Founder&apos;s Note
             </Text>
             <Text style={[styles.quote, { color: colors.text }]}>
-              "I built SmartStock after two decades of solving stock problems the hard way — spreadsheets, guesswork, and missed orders. Now, small businesses have something better. Simple, smart, and built to perform."
+              &quot;I built SmartStock after two decades of solving stock problems the hard way — spreadsheets, guesswork, and missed orders. Now, small businesses have something better. Simple, smart, and built to perform.&quot;
             </Text>
-          </Animated.View>
+          </View>
 
           {/* Contact */}
-          <Animated.View entering={FadeIn.delay(1400)}>
+          <View>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Contact
             </Text>
-            <AnimatedTouchableOpacity 
+            <TouchableOpacity 
               style={styles.contactButton}
               onPress={handleEmailPress}
             >
@@ -145,8 +125,8 @@ export default function AboutScreen() {
               <Text style={[styles.contactText, { color: colors.primary }]}>
                 smartstock.app@gmail.com
               </Text>
-            </AnimatedTouchableOpacity>
-            <AnimatedTouchableOpacity 
+            </TouchableOpacity>
+            <TouchableOpacity 
               style={styles.contactButton}
               onPress={handleWebsitePress}
             >
@@ -154,8 +134,8 @@ export default function AboutScreen() {
               <Text style={[styles.contactText, { color: colors.primary }]}>
                 www.smartstock.ai (coming soon)
               </Text>
-            </AnimatedTouchableOpacity>
-          </Animated.View>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </View>

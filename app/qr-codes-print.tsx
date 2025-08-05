@@ -74,6 +74,7 @@ export default function QRCodesPrintScreen() {
   const [selectedProducts, setSelectedProducts] = useState<string[]>(products.map(p => p.id));
   const [labelSize, setLabelSize] = useState(120); // Default shelf label size
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [showAllInPreview, setShowAllInPreview] = useState(false);
 
   const filteredProducts = products.filter(p => selectedProducts.includes(p.id));
 
@@ -423,7 +424,7 @@ export default function QRCodesPrintScreen() {
           <View style={styles.previewContainer}>
             <Text style={[styles.previewTitle, { color: colors.text }]}>Preview (Shelf Label Size)</Text>
             <View style={styles.labelsGrid}>
-              {filteredProducts.slice(0, 12).map(product => (
+              {(showAllInPreview ? filteredProducts : filteredProducts.slice(0, 12)).map(product => (
                 <QRLabel
                   key={product.id}
                   product={product}
@@ -431,20 +432,41 @@ export default function QRCodesPrintScreen() {
                   size={labelSize}
                 />
               ))}
-              {filteredProducts.length > 12 && (
-                <View style={[
-                  styles.moreLabels,
-                  {
-                    backgroundColor: colors.lightGray,
-                    borderColor: colors.border,
-                    width: labelSize,
-                    height: labelSize * 1.2,
-                  }
-                ]}>
+              {filteredProducts.length > 12 && !showAllInPreview && (
+                <TouchableOpacity 
+                  style={[
+                    styles.moreLabels,
+                    {
+                      backgroundColor: colors.lightGray,
+                      borderColor: colors.border,
+                      width: labelSize,
+                      height: labelSize * 1.2,
+                    }
+                  ]}
+                  onPress={() => setShowAllInPreview(true)}
+                >
                   <Text style={[styles.moreLabelsText, { color: colors.text }]}>
-                    +{filteredProducts.length - 12} more
+                    See {filteredProducts.length - 12} more
                   </Text>
-                </View>
+                </TouchableOpacity>
+              )}
+              {showAllInPreview && filteredProducts.length > 12 && (
+                <TouchableOpacity 
+                  style={[
+                    styles.moreLabels,
+                    {
+                      backgroundColor: colors.primary + '20',
+                      borderColor: colors.primary,
+                      width: labelSize,
+                      height: labelSize * 1.2,
+                    }
+                  ]}
+                  onPress={() => setShowAllInPreview(false)}
+                >
+                  <Text style={[styles.moreLabelsText, { color: colors.primary }]}>
+                    Show less
+                  </Text>
+                </TouchableOpacity>
               )}
             </View>
           </View>

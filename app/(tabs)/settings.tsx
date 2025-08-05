@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Info, Wrench, FileText, BookOpen } from 'lucide-react-native';
+import { Info, Wrench, FileText, BookOpen, Trash2 } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
+import { useInventoryStore } from '@/store/inventoryStore';
 import { trpcClient } from '@/lib/trpc';
 
 
@@ -27,6 +28,8 @@ export default function SettingsScreen() {
     toggleOrderUpdates,
     toggleRecentlyOrdered,
   } = useNotificationsStore();
+  
+  const { clearAllData, products } = useInventoryStore();
 
   const testEnvironment = async () => {
     if (!isMountedRef.current) return;
@@ -63,6 +66,31 @@ export default function SettingsScreen() {
         setIsTestingEnv(false);
       }
     }
+  };
+  
+  const handleClearAllData = () => {
+    Alert.alert(
+      "⚠️ Clear All Data",
+      `This will permanently delete all your data including:\n\n• ${products.length} products\n• All purchase orders\n• All stocktake records\n• Google Sheets settings\n\nThis action cannot be undone. Are you sure?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: () => {
+            clearAllData();
+            Alert.alert(
+              "✅ Data Cleared",
+              "All data has been successfully deleted. You can now upload a new CSV file.",
+              [{ text: "OK" }]
+            );
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -187,6 +215,28 @@ export default function SettingsScreen() {
               </Text>
               <Text style={[styles.settingDescription, { color: colors.inactive }]}>
                 Learn more about the app
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Data Management Section */}
+      <View style={[styles.section, { backgroundColor: colors.background }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Data Management</Text>
+        
+        <TouchableOpacity 
+          style={[styles.settingRow, { borderTopColor: colors.border }]}
+          onPress={handleClearAllData}
+        >
+          <View style={styles.settingInfo}>
+            <Trash2 size={22} color={colors.error || '#FF3B30'} style={styles.settingIcon} />
+            <View>
+              <Text style={[styles.settingLabel, { color: colors.error || '#FF3B30' }]}>
+                Clear All Data
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                Delete all products, orders, and settings
               </Text>
             </View>
           </View>

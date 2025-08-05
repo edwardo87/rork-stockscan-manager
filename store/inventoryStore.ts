@@ -46,6 +46,9 @@ interface InventoryState {
   
   // Error Management
   setError: (error: string | null) => void;
+  
+  // Data Management
+  clearAllData: () => void;
 }
 
 export const useInventoryStore = create<InventoryState>()(
@@ -337,6 +340,19 @@ export const useInventoryStore = create<InventoryState>()(
       setGoogleSheetsEnabled: (enabled) => set({ isGoogleSheetsEnabled: enabled }),
       
       setError: (error) => set({ error }),
+      
+      clearAllData: () => {
+        console.log('Clearing all inventory data');
+        set({
+          products: [],
+          currentOrderItems: [],
+          currentStocktakeItems: [],
+          purchaseOrders: [],
+          isGoogleSheetsEnabled: false,
+          lastSyncTime: null,
+          error: null
+        });
+      },
     }),
     {
       name: 'inventory-storage',

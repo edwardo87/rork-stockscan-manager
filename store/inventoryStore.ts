@@ -21,6 +21,7 @@ interface InventoryState {
   // Product Management
   setProducts: (products: Product[]) => void;
   addProduct: (product: Product) => void;
+  importProductsFromCSV: (products: Product[]) => void;
   loadProductsFromSheets: () => Promise<void>;
   getProductByBarcode: (barcode: string) => Product | undefined;
   updateProductStock: (productId: string, newStock: number) => void;
@@ -50,7 +51,7 @@ interface InventoryState {
 export const useInventoryStore = create<InventoryState>()(
   persist(
     (set, get) => ({
-      products: mockProducts,
+      products: [],
       suppliers: mockSuppliers,
       currentOrderItems: [],
       currentStocktakeItems: [],
@@ -66,6 +67,14 @@ export const useInventoryStore = create<InventoryState>()(
         products: [...state.products, product],
         lastSyncTime: new Date().toISOString()
       })),
+      
+      importProductsFromCSV: (products) => {
+        console.log(`Importing ${products.length} products from CSV`);
+        set({ 
+          products, 
+          lastSyncTime: new Date().toISOString() 
+        });
+      },
       
       loadProductsFromSheets: async () => {
         const state = get();

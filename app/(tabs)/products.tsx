@@ -17,7 +17,7 @@ export default function ProductsScreen() {
   const [showUploadOptions, setShowUploadOptions] = useState(false);
   const { colors } = useThemeStore();
   
-  const { products, setProducts, isLoading } = useInventoryStore();
+  const { products, importProductsFromCSV, isLoading } = useInventoryStore();
 
   const filteredProducts = products.filter(product => 
     product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -69,7 +69,7 @@ export default function ProductsScreen() {
             {
               text: 'Import',
               onPress: () => {
-                setProducts(importedProducts);
+                importProductsFromCSV(importedProducts);
                 setShowUploadOptions(false);
               }
             }
@@ -236,7 +236,7 @@ export default function ProductsScreen() {
       ) : (
         <EmptyState 
           type="products" 
-          onAction={handleAddProduct} 
+          onAction={() => setShowUploadOptions(true)} 
         />
       )}
     </View>

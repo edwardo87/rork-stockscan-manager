@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Platform, Alert, FlatList } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Platform, Alert, FlatList, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Printer, ArrowLeft, Grid, List } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
@@ -39,26 +39,17 @@ const QRLabel = ({ product, colors, size }: QRLabelProps) => {
             }}
           />
         ) : (
-          <View style={{
-            width: qrSize,
-            height: qrSize,
-            backgroundColor: colors.lightGray,
-            borderRadius: 4,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderWidth: 1,
-            borderColor: colors.border,
-          }}>
-            <Text style={{
-              color: colors.text,
-              fontSize: 8,
-              textAlign: 'center',
-              fontFamily: 'monospace',
-              padding: 4,
-            }}>
-              QR: {product.barcode}
-            </Text>
-          </View>
+          <Image 
+            source={{
+              uri: `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(product.barcode)}&bgcolor=ffffff&color=000000`
+            }}
+            style={{
+              width: qrSize,
+              height: qrSize,
+              borderRadius: 4,
+            }}
+            resizeMode="contain"
+          />
         )}
       </View>
       <View style={styles.labelInfo}>

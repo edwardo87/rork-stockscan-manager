@@ -199,17 +199,123 @@ export default function QRCodesPrintScreen() {
           printWindow.print();
         }
       } else {
-        // Mobile sharing - create a text file with all product info
-        const allProductsData = filteredProducts.map(product => 
-          `Product: ${product.name}\nSKU: ${product.sku}\nBarcode: ${product.barcode}\nCategory: ${product.category}\n---`
-        ).join('\n\n');
+        // Mobile sharing - create HTML file with QR codes for better viewing
+        const htmlContent = `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>QR Code Labels - ${filteredProducts.length} Products</title>
+              <style>
+                body { 
+                  font-family: Arial, sans-serif;
+                  margin: 10px;
+                  padding: 0;
+                  background: #f5f5f5;
+                }
+                .header {
+                  text-align: center;
+                  margin-bottom: 20px;
+                  padding: 15px;
+                  background: white;
+                  border-radius: 8px;
+                  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .labels-container {
+                  display: grid;
+                  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                  gap: 15px;
+                  padding: 10px;
+                }
+                .qr-label {
+                  background: white;
+                  border: 2px solid #ddd;
+                  border-radius: 8px;
+                  padding: 15px;
+                  text-align: center;
+                  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .qr-code {
+                  width: 120px;
+                  height: 120px;
+                  margin: 0 auto 10px;
+                  border: 1px solid #eee;
+                  border-radius: 4px;
+                }
+                .product-name {
+                  font-size: 14px;
+                  font-weight: bold;
+                  margin-bottom: 5px;
+                  color: #333;
+                  word-wrap: break-word;
+                }
+                .product-sku {
+                  font-size: 12px;
+                  color: #666;
+                  margin-bottom: 3px;
+                }
+                .product-barcode {
+                  font-size: 11px;
+                  color: #888;
+                  font-family: monospace;
+                  background: #f8f8f8;
+                  padding: 2px 4px;
+                  border-radius: 3px;
+                  word-break: break-all;
+                }
+                .product-category {
+                  font-size: 10px;
+                  color: #999;
+                  margin-top: 5px;
+                  font-style: italic;
+                }
+                @media print {
+                  body { background: white; }
+                  .labels-container {
+                    grid-template-columns: repeat(3, 1fr);
+                  }
+                  .qr-label {
+                    break-inside: avoid;
+                    box-shadow: none;
+                  }
+                }
+              </style>
+            </head>
+            <body>
+              <div class="header">
+                <h1>QR Code Labels</h1>
+                <p>${filteredProducts.length} Products • Generated ${new Date().toLocaleDateString()}</p>
+              </div>
+              <div class="labels-container">
+        `;
         
-        const fileUri = FileSystem.documentDirectory + `qr-codes-${Date.now()}.txt`;
-        await FileSystem.writeAsStringAsync(fileUri, allProductsData);
+        let labelsHtml = '';
+        filteredProducts.forEach(product => {
+          const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(product.barcode)}&bgcolor=ffffff&color=000000`;
+          labelsHtml += `
+            <div class="qr-label">
+              <img src="${qrCodeUrl}" alt="QR Code for ${product.barcode}" class="qr-code" />
+              <div class="product-name">${product.name}</div>
+              <div class="product-sku">SKU: ${product.sku}</div>
+              <div class="product-barcode">${product.barcode}</div>
+              <div class="product-category">${product.category}</div>
+            </div>
+          `;
+        });
+        
+        const finalHtml = htmlContent + labelsHtml + `
+              </div>
+            </body>
+          </html>
+        `;
+        
+        const fileUri = FileSystem.documentDirectory + `qr-codes-${Date.now()}.html`;
+        await FileSystem.writeAsStringAsync(fileUri, finalHtml);
         
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, {
-            mimeType: 'text/plain',
+            mimeType: 'text/html',
             dialogTitle: `Share QR Codes for ${filteredProducts.length} Products`,
           });
         } else {

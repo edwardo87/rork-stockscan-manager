@@ -286,7 +286,7 @@ export default function ProductDetailsScreen() {
           <View style={styles.content}>
             {/* Header Section */}
             <View style={styles.header}>
-              <View>
+              <View style={styles.headerContent}>
                 <Text style={[styles.name, { color: colors.text }]}>{product.name}</Text>
                 <Text style={[styles.sku, { color: colors.inactive }]}>{product.sku}</Text>
               </View>
@@ -419,22 +419,29 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 24,
+    gap: 12,
   },
   name: {
     fontSize: 24,
     fontWeight: '700',
     marginBottom: 4,
+    flexWrap: 'wrap',
   },
   sku: {
     fontSize: 14,
+  },
+  headerContent: {
+    flex: 1,
+    minWidth: 0,
   },
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 8,
     borderRadius: 8,
+    flexShrink: 0,
   },
   editButtonText: {
     marginLeft: 4,

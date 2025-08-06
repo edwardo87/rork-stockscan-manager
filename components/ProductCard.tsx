@@ -2,17 +2,28 @@ import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
 import { Product } from '@/types/inventory';
 import { useThemeStore } from '@/store/themeStore';
-import { AlertTriangle, Info, Clock } from 'lucide-react-native';
+import { AlertTriangle, Info, Clock, Edit } from 'lucide-react-native';
 import { formatDistanceToNow } from '@/utils/dateUtils';
+import { useRouter } from 'expo-router';
 
 interface ProductCardProps {
   product: Product;
   onPress?: () => void;
+  onEdit?: () => void;
 }
 
-export default function ProductCard({ product, onPress }: ProductCardProps) {
+export default function ProductCard({ product, onPress, onEdit }: ProductCardProps) {
   const { colors } = useThemeStore();
+  const router = useRouter();
   const isLowStock = product.currentStock < product.minStock;
+
+  const handleEdit = () => {
+    if (onEdit) {
+      onEdit();
+    } else {
+      router.push(`/product/edit/${product.id}`);
+    }
+  };
 
   return (
     <TouchableOpacity 
@@ -25,8 +36,16 @@ export default function ProductCard({ product, onPress }: ProductCardProps) {
       activeOpacity={0.7}
     >
       <View style={styles.header}>
-        <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{product.name}</Text>
-        <Text style={[styles.sku, { color: colors.inactive }]}>{product.sku}</Text>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{product.name}</Text>
+          <Text style={[styles.sku, { color: colors.inactive }]}>{product.sku}</Text>
+        </View>
+        <TouchableOpacity 
+          style={[styles.editButton, { backgroundColor: colors.lightGray }]}
+          onPress={handleEdit}
+        >
+          <Edit size={16} color={colors.primary} />
+        </TouchableOpacity>
       </View>
       
       <View style={styles.details}>
@@ -80,9 +99,12 @@ export default function ProductCard({ product, onPress }: ProductCardProps) {
           <Text style={[styles.price, { color: colors.text }]}>${product.price.toFixed(2)}</Text>
         </View>
         
-        <View style={[styles.infoButton, { backgroundColor: colors.lightGray }]}>
+        <TouchableOpacity 
+          style={[styles.infoButton, { backgroundColor: colors.lightGray }]}
+          onPress={onPress}
+        >
           <Info size={18} color={colors.primary} />
-        </View>
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
@@ -102,13 +124,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 16,
+  },
+  headerLeft: {
+    flex: 1,
+    marginRight: 12,
   },
   name: {
     fontSize: 18,
     fontWeight: '700',
-    flex: 1,
   },
   sku: {
     fontSize: 14,
@@ -180,6 +205,13 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },

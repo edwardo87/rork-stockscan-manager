@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CheckCircle, Home } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
-import SmartStockLogo from '@/components/SmartStockLogo';
+
 
 export default function OrderSuccessScreen() {
   const router = useRouter();
@@ -12,7 +12,7 @@ export default function OrderSuccessScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
-        <SmartStockLogo size="large" />
+        <Text style={[styles.logoText, { color: colors.primary }]}>SmartStock</Text>
         
         <View style={[styles.iconContainer, { backgroundColor: colors.lightGray }]}>
           <CheckCircle size={80} color={colors.success} />

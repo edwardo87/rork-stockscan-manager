@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
 import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
+import AppWrapper from "@/components/AppWrapper";
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
@@ -51,7 +52,9 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
-        <RootLayoutNav />
+        <AppWrapper>
+          <RootLayoutNav />
+        </AppWrapper>
       </trpc.Provider>
     </QueryClientProvider>
   );

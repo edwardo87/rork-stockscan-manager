@@ -354,18 +354,92 @@ export class SupabaseService {
       throw new Error('Supabase client not available');
     }
 
-    // Delete in order to respect foreign key constraints
-    await supabase.from('order_items').delete().in('purchase_order_id', 
-      supabase.from('purchase_orders').select('id').eq('user_id', user.id)
-    );
-    
-    await supabase.from('stocktake_items').delete().in('stocktake_id',
-      supabase.from('stocktakes').select('id').eq('user_id', user.id)
-    );
-    
-    await supabase.from('reorder_log').delete().eq('user_id', user.id);
-    await supabase.from('purchase_orders').delete().eq('user_id', user.id);
-    await supabase.from('stocktakes').delete().eq('user_id', user.id);
-    await supabase.from('products').delete().eq('user_id', user.id);
+    try {
+      // Delete in order to respect foreign key constraints
+      // First get the IDs we need to delete
+      const { data: purchaseOrderIds, error: poError } = await supabase
+        .from('purchase_orders')
+        .select('id')
+        .eq('user_id', user.id);
+      
+      if (poError) {
+        console.error('Error fetching purchase order IDs:', poError);
+      }
+      
+      const { data: stocktakeIds, error: stError } = await supabase
+        .from('stocktakes')
+        .select('id')
+        .eq('user_id', user.id);
+      
+      if (stError) {
+        console.error('Error fetching stocktake IDs:', stError);
+      }
+      
+      // Delete related records
+      if (purchaseOrderIds && purchaseOrderIds.length > 0) {
+        const orderIds = purchaseOrderIds.map(po => po.id);
+        const { error: orderItemsError } = await supabase
+          .from('order_items')
+          .delete()
+          .in('purchase_order_id', orderIds);
+        
+        if (orderItemsError) {
+          console.error('Error deleting order items:', orderItemsError);
+        }
+      }
+      
+      if (stocktakeIds && stocktakeIds.length > 0) {
+        const stockIds = stocktakeIds.map(st => st.id);
+        const { error: stocktakeItemsError } = await supabase
+          .from('stocktake_items')
+          .delete()
+          .in('stocktake_id', stockIds);
+        
+        if (stocktakeItemsError) {
+          console.error('Error deleting stocktake items:', stocktakeItemsError);
+        }
+      }
+      
+      // Delete main records
+      const { error: reorderError } = await supabase
+        .from('reorder_log')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (reorderError) {
+        console.error('Error deleting reorder log:', reorderError);
+      }
+      
+      const { error: purchaseOrdersError } = await supabase
+        .from('purchase_orders')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (purchaseOrdersError) {
+        console.error('Error deleting purchase orders:', purchaseOrdersError);
+      }
+      
+      const { error: stocktakesError } = await supabase
+        .from('stocktakes')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (stocktakesError) {
+        console.error('Error deleting stocktakes:', stocktakesError);
+      }
+      
+      const { error: productsError } = await supabase
+        .from('products')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (productsError) {
+        console.error('Error deleting products:', productsError);
+        throw new Error('Failed to delete products');
+      }
+    } catch (error) {
+      console.error('Error clearing user data:', error);
+      throw new Error('Failed to clear user data');
+    }
   }
 }

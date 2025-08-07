@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { useThemeStore } from '@/store/themeStore';
-import { ScanBarcode, ClipboardList, Package } from 'lucide-react-native';
+import { ScanBarcode, ClipboardList, Archive } from 'lucide-react-native';
 
 interface EmptyStateProps {
   type: 'order' | 'stocktake' | 'products';
@@ -28,13 +28,13 @@ export default function EmptyState({ type, onAction }: EmptyStateProps) {
       message = "Scan product barcodes to start counting your inventory.";
       break;
     case 'products':
-      icon = <Package size={64} color={colors.primary} />;
+      icon = <Archive size={64} color={colors.primary} />;
       title = "No Products Found";
       message = "Your product catalog is empty. Upload a CSV file, add products manually, or set up Google Sheets integration to get started.";
       actionText = "Upload Stock";
       break;
     default:
-      icon = <Package size={64} color={colors.primary} />;
+      icon = <Archive size={64} color={colors.primary} />;
       title = "Nothing Here Yet";
       message = "Get started by adding some items.";
       actionText = "Take Action";

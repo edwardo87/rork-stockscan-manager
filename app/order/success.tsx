@@ -83,4 +83,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
+  logoText: {
+    fontSize: 32,
+    fontWeight: '700',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
 });

@@ -2,11 +2,11 @@ import React from "react";
 import { Tabs } from "expo-router";
 import { ShoppingCart, ClipboardList, Package, Settings } from 'lucide-react-native';
 import { useThemeStore } from "@/store/themeStore";
-import { Platform } from 'react-native';
-
+import { Platform, StyleSheet, View } from 'react-native';
+import SmartStockLogo from "@/components/SmartStockLogo";
 
 export default function TabLayout() {
-  const { colors } = useThemeStore();
+  const { theme, colors } = useThemeStore();
   
   return (
     <Tabs
@@ -49,7 +49,7 @@ export default function TabLayout() {
         tabBarIconStyle: {
           marginBottom: -4,
         },
-        headerTitle: 'SmartStock',
+        headerTitle: () => <SmartStockLogo />,
       }}
     >
       <Tabs.Screen

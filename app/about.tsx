@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Linking, Platform
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Mail, Globe } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
-import SmartStockLogo from '@/components/SmartStockLogo';
+
 
 export default function AboutScreen() {
   const router = useRouter();
@@ -41,9 +41,7 @@ export default function AboutScreen() {
       >
         <View style={styles.content}>
           {/* Logo and Tagline */}
-          <View style={styles.logoContainer}>
-            <SmartStockLogo size="large" />
-          </View>
+
 
           <Text style={[styles.tagline, { color: colors.text }]}>
             Smarter Stock. Simpler Workdays.
@@ -168,10 +166,7 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 48,
   },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
+
   tagline: {
     fontSize: 24,
     fontWeight: '700',

@@ -12,7 +12,7 @@ export default function OrderSuccessScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
-        <Text style={[styles.logoText, { color: colors.primary }]}>SmartStock</Text>
+
         
         <View style={[styles.iconContainer, { backgroundColor: colors.lightGray }]}>
           <CheckCircle size={80} color={colors.success} />
@@ -83,10 +83,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
-  logoText: {
-    fontSize: 32,
-    fontWeight: '700',
-    marginBottom: 24,
-    textAlign: 'center',
-  },
+
 });

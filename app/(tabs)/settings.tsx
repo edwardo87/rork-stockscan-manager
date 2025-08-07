@@ -6,6 +6,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { trpcClient } from '@/lib/trpc';
+import { GoogleSheetsIntegration } from '@/components/GoogleSheetsIntegration';
 
 
 export default function SettingsScreen() {
@@ -242,6 +243,9 @@ export default function SettingsScreen() {
           </View>
         </TouchableOpacity>
       </View>
+
+      {/* Google Sheets Integration */}
+      <GoogleSheetsIntegration />
 
       {/* Developer Tools Section */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>

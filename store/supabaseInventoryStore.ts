@@ -54,6 +54,7 @@ interface SupabaseInventoryState {
   
   // Supabase Status
   checkSupabaseStatus: () => void;
+  setupAuthListener: () => any;
 }
 
 export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
@@ -453,26 +454,32 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
       checkSupabaseStatus: () => {
         const isEnabled = isSupabaseConfigured();
         set({ isSupabaseEnabled: isEnabled });
-        
-        if (isEnabled) {
-          // Set up auth state listener
-          supabase.auth.onAuthStateChange((event, session) => {
-            const user = session?.user || null;
-            set({ user, isAuthenticated: !!user });
-            
-            if (event === 'SIGNED_IN' && user) {
-              get().loadProducts();
-            } else if (event === 'SIGNED_OUT') {
-              set({ 
-                products: [], 
-                currentOrderItems: [], 
-                currentStocktakeItems: [], 
-                purchaseOrders: [],
-                lastSyncTime: null 
-              });
-            }
-          });
+      },
+      
+      setupAuthListener: () => {
+        if (!supabase || !isSupabaseConfigured()) {
+          return null;
         }
+        
+        // Set up auth state listener
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          const user = session?.user || null;
+          set({ user, isAuthenticated: !!user });
+          
+          if (event === 'SIGNED_IN' && user) {
+            get().loadProducts();
+          } else if (event === 'SIGNED_OUT') {
+            set({ 
+              products: [], 
+              currentOrderItems: [], 
+              currentStocktakeItems: [], 
+              purchaseOrders: [],
+              lastSyncTime: null 
+            });
+          }
+        });
+        
+        return subscription;
       },
     }),
     {

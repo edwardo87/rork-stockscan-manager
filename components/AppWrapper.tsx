@@ -15,9 +15,12 @@ export default function AppWrapper({ children }: AppWrapperProps) {
     isAuthenticated,
     checkSupabaseStatus,
     checkAuthStatus,
+    setupAuthListener,
   } = useSupabaseInventoryStore();
 
   useEffect(() => {
+    let subscription: any = null;
+    
     const initialize = async () => {
       try {
         // Check if Supabase is configured
@@ -26,6 +29,9 @@ export default function AppWrapper({ children }: AppWrapperProps) {
         if (isSupabaseConfigured()) {
           // Check authentication status
           await checkAuthStatus();
+          
+          // Set up auth listener
+          subscription = setupAuthListener();
         }
       } catch (error) {
         console.error('Error initializing app:', error);
@@ -35,7 +41,13 @@ export default function AppWrapper({ children }: AppWrapperProps) {
     };
 
     initialize();
-  }, []);
+    
+    return () => {
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+    };
+  }, [checkSupabaseStatus, checkAuthStatus, setupAuthListener]);
 
   if (isInitializing) {
     return (

@@ -45,7 +45,7 @@ const convertAppProductToSupabase = (product: Product, userId: string): Supabase
 export class SupabaseService {
   // Check if service is available
   static isAvailable(): boolean {
-    return isSupabaseConfigured();
+    return isSupabaseConfigured() && supabase !== null;
   }
 
   // Products
@@ -57,6 +57,10 @@ export class SupabaseService {
     const user = await getCurrentUser();
     if (!user) {
       throw new Error('User not authenticated');
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase client not available');
     }
 
     const { data, error } = await supabase
@@ -81,6 +85,10 @@ export class SupabaseService {
     const user = await getCurrentUser();
     if (!user) {
       throw new Error('User not authenticated');
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase client not available');
     }
 
     const supabaseProduct = convertAppProductToSupabase(product, user.id);
@@ -125,6 +133,10 @@ export class SupabaseService {
     if (updates.imageUrl !== undefined) supabaseUpdates.image_url = updates.imageUrl || null;
     if (updates.lastOrdered !== undefined) supabaseUpdates.last_ordered = updates.lastOrdered || null;
 
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
     const { data, error } = await supabase
       .from('products')
       .update(supabaseUpdates)
@@ -151,6 +163,10 @@ export class SupabaseService {
       throw new Error('User not authenticated');
     }
 
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
     const { error } = await supabase
       .from('products')
       .delete()
@@ -171,6 +187,10 @@ export class SupabaseService {
     const user = await getCurrentUser();
     if (!user) {
       throw new Error('User not authenticated');
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase client not available');
     }
 
     const supabaseProducts = products.map(product => 
@@ -199,6 +219,10 @@ export class SupabaseService {
     const user = await getCurrentUser();
     if (!user) {
       throw new Error('User not authenticated');
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase client not available');
     }
 
     // Create purchase order
@@ -271,6 +295,10 @@ export class SupabaseService {
       throw new Error('User not authenticated');
     }
 
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
     // Create stocktake session
     const stocktakeId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
     
@@ -320,6 +348,10 @@ export class SupabaseService {
     const user = await getCurrentUser();
     if (!user) {
       throw new Error('User not authenticated');
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase client not available');
     }
 
     // Delete in order to respect foreign key constraints

@@ -44,7 +44,6 @@
     "googleapis": "^150.0.1",
     "hono": "^4.7.11",
     "lucide-react-native": "^0.475.0",
-    "nativewind": "^4.1.23",
     "pdf-lib": "^1.17.1",
     "react": "19.0.0",
     "react-dom": "19.0.0",
@@ -57,7 +56,8 @@
     "superjson": "^2.2.2",
     "tslib": "^2.8.1",
     "zod": "^3.25.57",
-    "zustand": "^5.0.2"
+    "zustand": "^5.0.2",
+    "@rork-ai/toolkit-sdk": "latest"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

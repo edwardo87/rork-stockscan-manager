@@ -35,3 +35,10 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 .vercel
+
+ios/
+android/
+.env
+core
+node_modules
+.expo

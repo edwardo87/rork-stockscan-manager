@@ -14,13 +14,10 @@ export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
-
-// Hide splash screen after a short delay to prevent font loading timeout
-setTimeout(() => {
-  SplashScreen.hideAsync();
-}, 100);
+// Prevent the splash screen from auto-hiding before the root layout mounts.
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Splash may already be hidden in preview/runtime refreshes.
+});
 
 // Create a client outside of component to avoid recreation
 const queryClient = new QueryClient({
@@ -49,6 +46,18 @@ const trpcClient = trpc.createClient({
 });
 
 export default function RootLayout() {
+  useEffect(() => {
+    const hideSplash = async () => {
+      try {
+        await SplashScreen.hideAsync();
+      } catch {
+        // Ignore if the splash screen has already been hidden.
+      }
+    };
+
+    hideSplash();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>

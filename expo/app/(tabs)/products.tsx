@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { StyleSheet, View, Text, FlatList, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Search, Filter, Plus, Upload, FileText, QrCode } from 'lucide-react-native';
 import { useInventoryStore } from '@/store/inventoryStore';
@@ -98,14 +98,36 @@ export default function ProductsScreen() {
     try {
       const csvTemplate = generateCSVTemplate();
       const fileName = 'smartstock_template.csv';
-      const fileUri = FileSystem.documentDirectory + fileName;
-      
+
+      if (Platform.OS === 'web') {
+        // Web: trigger a real browser download via Blob + <a download>
+        const blob = new Blob([csvTemplate], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setShowUploadOptions(false);
+        return;
+      }
+
+      const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+      if (!baseDir) {
+        Alert.alert('Download Failed', 'No writable directory available on this device.', [{ text: 'OK' }]);
+        return;
+      }
+      const fileUri = baseDir + fileName;
       await FileSystem.writeAsStringAsync(fileUri, csvTemplate);
-      
-      if (await Sharing.isAvailableAsync()) {
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
         await Sharing.shareAsync(fileUri, {
           mimeType: 'text/csv',
-          dialogTitle: 'Download CSV Template'
+          dialogTitle: 'Download CSV Template',
+          UTI: 'public.comma-separated-values-text',
         });
       } else {
         Alert.alert(
@@ -114,12 +136,10 @@ export default function ProductsScreen() {
           [{ text: 'OK' }]
         );
       }
+      setShowUploadOptions(false);
     } catch (error) {
-      Alert.alert(
-        'Download Failed',
-        'Failed to generate CSV template',
-        [{ text: 'OK' }]
-      );
+      const msg = error instanceof Error ? error.message : 'Failed to generate CSV template';
+      Alert.alert('Download Failed', msg, [{ text: 'OK' }]);
     }
   };
 

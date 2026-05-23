@@ -263,10 +263,25 @@ export function parseCSVWithSummary(csvContent: string): CSVImportResult {
   };
 }
 
-function generateProductId(index: number, identifier: string): string {
-  const timestamp = Date.now().toString().slice(-6);
-  const cleanIdentifier = identifier.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 4);
-  return `PROD_${cleanIdentifier}_${timestamp}_${index}`;
+/**
+ * Generates an RFC4122 v4 UUID. Supabase `products.id` is a `uuid` column,
+ * so non-UUID strings (e.g. `PROD_ABCD_123456_1`) cause `invalid input syntax
+ * for type uuid` errors on bulk insert.
+ */
+function generateProductId(_index: number, _identifier: string): string {
+  // Prefer the platform's crypto.randomUUID when available (modern Hermes / web).
+  const g: { crypto?: { randomUUID?: () => string } } = globalThis as unknown as {
+    crypto?: { randomUUID?: () => string };
+  };
+  if (g.crypto && typeof g.crypto.randomUUID === 'function') {
+    return g.crypto.randomUUID();
+  }
+  // Fallback v4 implementation.
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 function generateSKU(name: string): string {

@@ -206,8 +206,11 @@ export class SupabaseService {
       .select();
 
     if (error) {
-      console.error('Error bulk creating products:', error);
-      throw new Error('Failed to create products');
+      // Surface the real Postgres error so users see *why* the insert failed
+      // (e.g. invalid UUID, RLS violation, missing column) instead of `[object Object]`.
+      console.error('Error bulk creating products:', JSON.stringify(error, null, 2));
+      const detail = error.message || error.details || error.hint || 'Unknown database error';
+      throw new Error(`Failed to create products: ${detail}`);
     }
 
     return data.map(convertSupabaseProductToApp);

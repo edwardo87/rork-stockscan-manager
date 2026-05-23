@@ -33,9 +33,19 @@ export const getCurrentUser = async () => {
     return null;
   }
   
+  // Check for an existing session first to avoid noisy
+  // "Auth session missing!" errors on the public/login screen.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    return null;
+  }
+
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error) {
-    console.error('Error getting current user:', error);
+    // AuthSessionMissingError is expected when the user is logged out — don't log it.
+    if (error.name !== 'AuthSessionMissingError') {
+      console.error('Error getting current user:', error);
+    }
     return null;
   }
   return user;

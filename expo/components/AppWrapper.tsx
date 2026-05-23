@@ -10,8 +10,10 @@ interface AppWrapperProps {
 
 export default function AppWrapper({ children }: AppWrapperProps) {
   const [isInitializing, setIsInitializing] = useState(true);
+  // Read env-driven configuration synchronously from process.env so it can't be
+  // shadowed by stale persisted state from a previous launch.
+  const supabaseReady = isSupabaseConfigured();
   const {
-    isSupabaseEnabled,
     isAuthenticated,
     checkSupabaseStatus,
     checkAuthStatus,
@@ -59,7 +61,7 @@ export default function AppWrapper({ children }: AppWrapperProps) {
   }
 
   // If Supabase is not configured, show a setup message but still allow app usage
-  if (!isSupabaseEnabled) {
+  if (!supabaseReady) {
     return (
       <View style={styles.container}>
         <View style={styles.setupBanner}>
@@ -73,7 +75,7 @@ export default function AppWrapper({ children }: AppWrapperProps) {
   }
 
   // If Supabase is configured but user is not authenticated, show auth screen
-  if (isSupabaseEnabled && !isAuthenticated) {
+  if (!isAuthenticated) {
     return (
       <AuthScreen 
         onAuthSuccess={() => {

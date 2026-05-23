@@ -535,11 +535,13 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
       name: 'supabase-inventory-storage',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
-        // Only persist non-sensitive data when not using Supabase
+        // Only persist non-sensitive data when not using Supabase.
+        // NEVER persist isSupabaseEnabled — it must be recomputed from env at every launch,
+        // otherwise a previously-persisted `false` will mask freshly-added env vars and
+        // the auth screen will never show.
         products: state.isSupabaseEnabled ? [] : state.products,
         purchaseOrders: state.isSupabaseEnabled ? [] : state.purchaseOrders,
         lastSyncTime: state.lastSyncTime,
-        isSupabaseEnabled: state.isSupabaseEnabled
       })
     }
   )

@@ -23,6 +23,11 @@ const columnMapping: Record<string, string | string[]> = {
   'barcode': 'barcode',
   'category': 'category',
   'supplier': 'supplier',
+  'supplier_email': 'supplierEmail',
+  'supplier_e_mail': 'supplierEmail',
+  'supplieremail': 'supplierEmail',
+  'email': 'supplierEmail',
+  'supplier_contact': 'supplierEmail',
   'price': 'price',
   'selling_price': 'price',
   'cost': 'cost',
@@ -200,6 +205,10 @@ export function parseCSVWithSummary(csvContent: string): CSVImportResult {
       } else if (['currentStock', 'minStock'].includes(mapping)) {
         const n = parseInt(value, 10);
         draft[mapping] = Number.isFinite(n) ? n : 0;
+      } else if (mapping === 'supplierEmail') {
+        const trimmed = value.trim();
+        // Basic sanity check — skip obvious non-emails so we don't email garbage.
+        draft[mapping] = /.+@.+\..+/.test(trimmed) ? trimmed : '';
       } else if (['price', 'cost'].includes(mapping)) {
         // Tolerate currency symbols / commas as thousand sep
         const cleanedNum = value.replace(/[^0-9.\-]/g, '');
@@ -228,6 +237,7 @@ export function parseCSVWithSummary(csvContent: string): CSVImportResult {
       barcode: productBarcode,
       category: (draft.category as string | undefined) || 'Uncategorized',
       supplier: (draft.supplier as string | undefined) || 'Unknown Supplier',
+      supplierEmail: (draft.supplierEmail as string | undefined) || undefined,
       price:
         (draft.price as number | undefined) ||
         (typeof draft.cost === 'number' ? Math.round(draft.cost * 1.3 * 100) / 100 : 0),
@@ -278,13 +288,13 @@ function generateBarcode(): string {
  */
 export function generateCSVTemplate(): string {
   const headers = [
-    'name', 'description', 'sku', 'barcode', 'category', 'supplier',
+    'name', 'description', 'sku', 'barcode', 'category', 'supplier', 'supplier_email',
     'cost', 'price', 'current_stock', 'min_stock', 'unit',
   ];
 
   const sampleData = [
-    ['Sample Product 1', 'This is a sample product description', 'SAMP001', '1234567890123', 'Electronics', 'Sample Supplier Ltd', '10.50', '15.99', '25', '5', 'each'],
-    ['Sample Product 2', 'Another sample product', 'SAMP002', '1234567890124', 'Office Supplies', 'Office Supply Co', '2.25', '3.99', '100', '10', 'pack'],
+    ['Sample Product 1', 'This is a sample product description', 'SAMP001', '1234567890123', 'Electronics', 'Sample Supplier Ltd', 'orders@samplesupplier.com', '10.50', '15.99', '25', '5', 'each'],
+    ['Sample Product 2', 'Another sample product', 'SAMP002', '1234567890124', 'Office Supplies', 'Office Supply Co', 'sales@officesupply.co', '2.25', '3.99', '100', '10', 'pack'],
   ];
 
   return [headers.join(','), ...sampleData.map(row => row.join(','))].join('\n');

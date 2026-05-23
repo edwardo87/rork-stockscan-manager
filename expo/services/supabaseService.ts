@@ -17,6 +17,7 @@ const convertSupabaseProductToApp = (supabaseProduct: SupabaseProduct): Product 
   sku: supabaseProduct.sku,
   category: supabaseProduct.category,
   supplier: supabaseProduct.supplier,
+  supplierEmail: supabaseProduct.supplier_email || undefined,
   minStock: supabaseProduct.min_stock,
   currentStock: supabaseProduct.current_stock,
   unit: supabaseProduct.unit,
@@ -35,6 +36,7 @@ const convertAppProductToSupabase = (product: Product, userId: string): Supabase
   sku: product.sku,
   category: product.category,
   supplier: product.supplier,
+  supplier_email: product.supplierEmail || null,
   min_stock: product.minStock,
   current_stock: product.currentStock,
   unit: product.unit,
@@ -127,6 +129,7 @@ export class SupabaseService {
     if (updates.sku !== undefined) supabaseUpdates.sku = updates.sku;
     if (updates.category !== undefined) supabaseUpdates.category = updates.category;
     if (updates.supplier !== undefined) supabaseUpdates.supplier = updates.supplier;
+    if (updates.supplierEmail !== undefined) supabaseUpdates.supplier_email = updates.supplierEmail || null;
     if (updates.minStock !== undefined) supabaseUpdates.min_stock = updates.minStock;
     if (updates.currentStock !== undefined) supabaseUpdates.current_stock = updates.currentStock;
     if (updates.unit !== undefined) supabaseUpdates.unit = updates.unit;

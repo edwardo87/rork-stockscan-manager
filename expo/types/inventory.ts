@@ -8,6 +8,8 @@ export interface Product {
   sku: string;
   category: string;
   supplier: string;
+  /** Optional supplier email — used to auto-fill the PO email recipient. */
+  supplierEmail?: string;
   minStock: number;
   currentStock: number;
   unit: string;

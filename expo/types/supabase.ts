@@ -42,6 +42,7 @@ export interface Database {
           sku: string
           category: string
           supplier: string
+          supplier_email: string | null
           min_stock: number
           current_stock: number
           unit: string
@@ -61,6 +62,7 @@ export interface Database {
           sku: string
           category: string
           supplier: string
+          supplier_email?: string | null
           min_stock: number
           current_stock: number
           unit: string
@@ -80,6 +82,7 @@ export interface Database {
           sku?: string
           category?: string
           supplier?: string
+          supplier_email?: string | null
           min_stock?: number
           current_stock?: number
           unit?: string

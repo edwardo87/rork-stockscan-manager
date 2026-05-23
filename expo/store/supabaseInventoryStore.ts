@@ -1,14 +1,42 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Product, OrderItem, StocktakeItem, PurchaseOrder } from '@/types/inventory';
+import { Product, OrderItem, StocktakeItem, PurchaseOrder, Supplier } from '@/types/inventory';
 import { suppliers as mockSuppliers } from '@/mocks/suppliers';
+
+/**
+ * Derives the supplier list (with emails) from the current product set.
+ * Supplier email is sourced from product.supplierEmail so non-technical users
+ * can manage suppliers entirely through the CSV import workflow.
+ */
+function deriveSuppliersFromProducts(products: Product[]): Supplier[] {
+  const byName = new Map<string, Supplier>();
+  for (const p of products) {
+    const name = (p.supplier || '').trim();
+    if (!name) continue;
+    const existing = byName.get(name);
+    const email = (p.supplierEmail || '').trim();
+    if (!existing) {
+      byName.set(name, {
+        id: name,
+        name,
+        email,
+        phone: '',
+        address: '',
+        contactPerson: '',
+      });
+    } else if (!existing.email && email) {
+      existing.email = email;
+    }
+  }
+  return Array.from(byName.values());
+}
 import { SupabaseService } from '@/services/supabaseService';
 import { supabase, getCurrentUser, isSupabaseConfigured, signOut as signOutFromSupabase } from '@/lib/supabase';
 
 interface SupabaseInventoryState {
   products: Product[];
-  suppliers: typeof mockSuppliers;
+  suppliers: Supplier[];
   currentOrderItems: OrderItem[];
   currentStocktakeItems: StocktakeItem[];
   purchaseOrders: PurchaseOrder[];
@@ -116,7 +144,11 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         }
       },
 
-      setProducts: (products) => set({ products, lastSyncTime: new Date().toISOString() }),
+      setProducts: (products) => set({
+        products,
+        suppliers: deriveSuppliersFromProducts(products),
+        lastSyncTime: new Date().toISOString(),
+      }),
       
       loadProducts: async () => {
         const state = get();
@@ -127,8 +159,9 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         set({ isLoading: true, error: null });
         try {
           const products = await SupabaseService.getProducts();
-          set({ 
-            products, 
+          set({
+            products,
+            suppliers: deriveSuppliersFromProducts(products),
             isLoading: false,
             lastSyncTime: new Date().toISOString()
           });
@@ -146,11 +179,15 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           set({ isLoading: true, error: null });
           try {
             const createdProduct = await SupabaseService.createProduct(product);
-            set((state) => ({
-              products: [...state.products, createdProduct],
-              isLoading: false,
-              lastSyncTime: new Date().toISOString()
-            }));
+            set((state) => {
+              const next = [...state.products, createdProduct];
+              return {
+                products: next,
+                suppliers: deriveSuppliersFromProducts(next),
+                isLoading: false,
+                lastSyncTime: new Date().toISOString(),
+              };
+            });
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to add product';
             set({ error: errorMessage, isLoading: false });
@@ -158,10 +195,14 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           }
         } else {
           // Fallback to local storage
-          set((state) => ({
-            products: [...state.products, product],
-            lastSyncTime: new Date().toISOString()
-          }));
+          set((state) => {
+            const next = [...state.products, product];
+            return {
+              products: next,
+              suppliers: deriveSuppliersFromProducts(next),
+              lastSyncTime: new Date().toISOString(),
+            };
+          });
         }
       },
       
@@ -172,13 +213,17 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           set({ isLoading: true, error: null });
           try {
             const updated = await SupabaseService.updateProduct(productId, updatedProduct);
-            set((state) => ({
-              products: state.products.map(product =>
+            set((state) => {
+              const next = state.products.map(product =>
                 product.id === productId ? updated : product
-              ),
-              isLoading: false,
-              lastSyncTime: new Date().toISOString()
-            }));
+              );
+              return {
+                products: next,
+                suppliers: deriveSuppliersFromProducts(next),
+                isLoading: false,
+                lastSyncTime: new Date().toISOString(),
+              };
+            });
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to update product';
             set({ error: errorMessage, isLoading: false });
@@ -186,14 +231,18 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           }
         } else {
           // Fallback to local storage
-          set((state) => ({
-            products: state.products.map(product =>
+          set((state) => {
+            const next = state.products.map(product =>
               product.id === productId
                 ? { ...product, ...updatedProduct }
                 : product
-            ),
-            lastSyncTime: new Date().toISOString()
-          }));
+            );
+            return {
+              products: next,
+              suppliers: deriveSuppliersFromProducts(next),
+              lastSyncTime: new Date().toISOString(),
+            };
+          });
         }
       },
       
@@ -213,9 +262,10 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           }
         } else {
           // Fallback to local storage
-          set({ 
-            products, 
-            lastSyncTime: new Date().toISOString() 
+          set({
+            products,
+            suppliers: deriveSuppliersFromProducts(products),
+            lastSyncTime: new Date().toISOString(),
           });
         }
       },

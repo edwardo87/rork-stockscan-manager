@@ -29,7 +29,7 @@ export default function SetupGuideScreen() {
           </Text>
           <View style={[styles.codeBlock, { backgroundColor: colors.lightGray }]}>
             <Text style={[styles.codeText, { color: colors.text }]}>
-              Category,Supplier,Item_Description,Pack_Size,itemcode,barcode,current_stock,last_ordered,cost,minstock
+name,description,sku,barcode,category,supplier,supplier_email,cost,price,current_stock,min_stock,unit
             </Text>
           </View>
         </View>
@@ -38,16 +38,18 @@ export default function SetupGuideScreen() {
           <Table size={40} color={colors.primary} style={styles.sectionIcon} />
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Step 2: Column Details</Text>
           <Text style={[styles.sectionText, { color: colors.inactive }]}>
-            • Category: Product category name{"\n"}
-            • Supplier: Supplier name{"\n"}
-            • Item_Description: Product name and description{"\n"}
-            • Pack_Size: Unit of measure (e.g., "each", "box", "kg"){"\n"}
-            • itemcode: Unique product ID/SKU{"\n"}
-            • barcode: Product barcode number{"\n"}
+            • name: Product name (required){"\n"}
+            • description: Product description (optional){"\n"}
+            • sku: Unique product code (auto-generated if blank){"\n"}
+            • barcode: Product barcode (auto-generated if blank){"\n"}
+            • category: Product category (optional){"\n"}
+            • supplier: Supplier name (optional){"\n"}
+            • supplier_email: Supplier email for PO sending (optional, recommended){"\n"}
+            • cost: Product cost price (optional){"\n"}
+            • price: Selling price (optional){"\n"}
             • current_stock: Current quantity in stock{"\n"}
-            • last_ordered: Last order date (optional){"\n"}
-            • cost: Product cost price{"\n"}
-            • minstock: Minimum stock level
+            • min_stock: Minimum stock level for reorder alerts{"\n"}
+            • unit: Unit of measure (e.g., "each", "box", "kg")
           </Text>
         </View>
         

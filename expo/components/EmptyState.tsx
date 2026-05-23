@@ -30,7 +30,7 @@ export default function EmptyState({ type, onAction }: EmptyStateProps) {
     case 'products':
       icon = <Archive size={64} color={colors.primary} />;
       title = "No Products Found";
-      message = "Your product catalog is empty. Upload a CSV file, add products manually, or set up Google Sheets integration to get started.";
+      message = "Your product catalog is empty. Upload a CSV file or add products manually to get started.";
       actionText = "Upload Stock";
       break;
     default:

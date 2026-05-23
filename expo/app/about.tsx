@@ -86,7 +86,7 @@ export default function AboutScreen() {
                 🔹 Scan & Reorder with QR / Barcodes
               </Text>
               <Text style={[styles.bulletPoint, { color: colors.primary }]}>
-                🔹 Google Sheets Sync
+                🔹 Cloud Sync Across Devices
               </Text>
               <Text style={[styles.bulletPoint, { color: colors.primary }]}>
                 🔹 Live Stock Levels & Alerts

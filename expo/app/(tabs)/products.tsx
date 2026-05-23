@@ -143,11 +143,6 @@ export default function ProductsScreen() {
     }
   };
 
-  const handleGoogleSheetsSetup = () => {
-    router.push('/(tabs)/settings');
-    setShowUploadOptions(false);
-  };
-
   const handlePrintQRCodes = () => {
     router.push('/qr-codes-print');
   };
@@ -226,24 +221,13 @@ export default function ProductsScreen() {
             </TouchableOpacity>
             
             <TouchableOpacity 
-              style={[styles.uploadOption, { borderBottomColor: colors.border }]}
+              style={styles.uploadOption}
               onPress={handleDownloadTemplate}
             >
               <FileText size={20} color={colors.text} />
               <View style={styles.uploadOptionText}>
                 <Text style={[styles.uploadOptionTitle, { color: colors.text }]}>Download CSV Template</Text>
                 <Text style={[styles.uploadOptionDescription, { color: colors.inactive }]}>Get a sample CSV file to fill out</Text>
-              </View>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.uploadOption}
-              onPress={handleGoogleSheetsSetup}
-            >
-              <Upload size={20} color={colors.text} />
-              <View style={styles.uploadOptionText}>
-                <Text style={[styles.uploadOptionTitle, { color: colors.text }]}>Google Sheets Integration</Text>
-                <Text style={[styles.uploadOptionDescription, { color: colors.inactive }]}>Sync with Google Sheets</Text>
               </View>
             </TouchableOpacity>
           </View>

@@ -73,7 +73,7 @@ export default function SettingsScreen() {
   const handleClearAllData = () => {
     Alert.alert(
       "⚠️ Clear All Data",
-      `This will permanently delete all your data including:\n\n• ${products.length} products\n• All purchase orders\n• All stocktake records\n• Google Sheets settings\n\nThis action cannot be undone. Are you sure?`,
+      `This will permanently delete all your data including:\n\n• ${products.length} products\n• All purchase orders\n• All stocktake records\n\nThis action cannot be undone. Are you sure?`,
       [
         {
           text: "Cancel",

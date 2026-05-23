@@ -55,10 +55,10 @@ name,description,sku,barcode,category,supplier,supplier_email,cost,price,current
         
         <View style={styles.section}>
           <Database size={40} color={colors.primary} style={styles.sectionIcon} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Step 3: Export from Google Sheets</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Step 3: Export Your Spreadsheet as CSV</Text>
           <Text style={[styles.sectionText, { color: colors.inactive }]}>
-            1. Open your Google Sheet{"\n"}
-            2. Click File {">"} Download {">"} Comma Separated Values (.csv){"\n"}
+            1. Open your stock list in Excel, Numbers, or any spreadsheet app{"\n"}
+            2. Choose File {">"} Save As / Export and select CSV (Comma Separated Values){"\n"}
             3. Save the file to your device
           </Text>
         </View>

@@ -13,6 +13,7 @@ export default function StocktakeScreen() {
   const [showScanner, setShowScanner] = useState(false);
   const { colors } = useThemeStore();
   
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { 
     products, 
     currentStocktakeItems, 
@@ -65,9 +66,17 @@ export default function StocktakeScreen() {
         { text: "Cancel", style: "cancel" },
         { 
           text: "Submit", 
-          onPress: () => {
-            submitStocktake();
-            router.push('/stocktake/success');
+          onPress: async () => {
+            try {
+              setIsSubmitting(true);
+              await submitStocktake();
+              router.push('/stocktake/success');
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Failed to save stocktake';
+              Alert.alert('Save Failed', msg, [{ text: 'OK' }]);
+            } finally {
+              setIsSubmitting(false);
+            }
           }
         }
       ]
@@ -133,10 +142,10 @@ export default function StocktakeScreen() {
                 currentStocktakeItems.length === 0 && { backgroundColor: colors.inactive }
               ]} 
               onPress={handleSubmitStocktake}
-              disabled={currentStocktakeItems.length === 0}
+              disabled={currentStocktakeItems.length === 0 || isSubmitting}
             >
               <Save size={24} color={colors.background} />
-              <Text style={[styles.submitButtonText, { color: colors.background }]}>Submit Stocktake</Text>
+              <Text style={[styles.submitButtonText, { color: colors.background }]}>{isSubmitting ? 'Saving…' : 'Submit Stocktake'}</Text>
             </TouchableOpacity>
           </View>
         </>

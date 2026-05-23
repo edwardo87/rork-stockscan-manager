@@ -7,7 +7,7 @@ import { useThemeStore } from '@/store/themeStore';
 import ProductCard from '@/components/ProductCard';
 import EmptyState from '@/components/EmptyState';
 import * as DocumentPicker from 'expo-document-picker';
-import { parseCSV, validateCSVFormat, generateCSVTemplate } from '@/services/csvImportService';
+import { parseCSVWithSummary, validateCSVFormat, generateCSVTemplate } from '@/services/csvImportService';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 
@@ -58,19 +58,28 @@ export default function ProductsScreen() {
           return;
         }
         
-        // Parse CSV
-        const importedProducts = parseCSV(csvContent);
-        
+        // Parse CSV with summary
+        const summary = parseCSVWithSummary(csvContent);
+        const warningTail = summary.warnings.length > 0
+          ? `\n\nSkipped ${summary.skipped} row(s):\n${summary.warnings.slice(0, 5).join('\n')}${summary.warnings.length > 5 ? `\n…and ${summary.warnings.length - 5} more` : ''}`
+          : '';
+
         Alert.alert(
-          'Import Successful',
-          `Successfully imported ${importedProducts.length} products. This will replace your current product list.`,
+          'Import Preview',
+          `Ready to import ${summary.imported} products. This will replace your current product list.${warningTail}`,
           [
             { text: 'Cancel', style: 'cancel' },
             {
               text: 'Import',
-              onPress: () => {
-                importProductsFromCSV(importedProducts);
-                setShowUploadOptions(false);
+              onPress: async () => {
+                try {
+                  await importProductsFromCSV(summary.products);
+                  setShowUploadOptions(false);
+                  Alert.alert('Import Complete', `Imported ${summary.imported} products.`, [{ text: 'OK' }]);
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : 'Failed to save imported products';
+                  Alert.alert('Import Failed', msg, [{ text: 'OK' }]);
+                }
               }
             }
           ]

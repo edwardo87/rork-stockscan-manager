@@ -13,6 +13,7 @@ export default function OrderScreen() {
   const [showScanner, setShowScanner] = useState(false);
   const { colors } = useThemeStore();
   
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { 
     products, 
     currentOrderItems, 
@@ -66,9 +67,17 @@ export default function OrderScreen() {
         { text: "Cancel", style: "cancel" },
         { 
           text: "Submit", 
-          onPress: () => {
-            submitOrder();
-            router.push('/order/success');
+          onPress: async () => {
+            try {
+              setIsSubmitting(true);
+              await submitOrder();
+              router.push('/order/success');
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Failed to submit order';
+              Alert.alert('Submit Failed', msg, [{ text: 'OK' }]);
+            } finally {
+              setIsSubmitting(false);
+            }
           }
         }
       ]
@@ -134,10 +143,10 @@ export default function OrderScreen() {
                 currentOrderItems.length === 0 && { backgroundColor: colors.inactive }
               ]} 
               onPress={handleSubmitOrder}
-              disabled={currentOrderItems.length === 0}
+              disabled={currentOrderItems.length === 0 || isSubmitting}
             >
               <Send size={24} color={colors.background} />
-              <Text style={[styles.submitButtonText, { color: colors.background }]}>Submit Order</Text>
+              <Text style={[styles.submitButtonText, { color: colors.background }]}>{isSubmitting ? 'Submitting…' : 'Submit Order'}</Text>
             </TouchableOpacity>
           </View>
         </>

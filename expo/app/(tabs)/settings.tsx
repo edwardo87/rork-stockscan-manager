@@ -6,7 +6,8 @@ import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { trpcClient } from '@/lib/trpc';
-import { GoogleSheetsIntegration } from '@/components/GoogleSheetsIntegration';
+// GoogleSheetsIntegration is dormant for MVP — kept in repo but not mounted.
+// import { GoogleSheetsIntegration } from '@/components/GoogleSheetsIntegration';
 
 
 export default function SettingsScreen() {
@@ -81,13 +82,18 @@ export default function SettingsScreen() {
         {
           text: "Delete All",
           style: "destructive",
-          onPress: () => {
-            clearAllData();
-            Alert.alert(
-              "✅ Data Cleared",
-              "All data has been successfully deleted. You can now upload a new CSV file.",
-              [{ text: "OK" }]
-            );
+          onPress: async () => {
+            try {
+              await clearAllData();
+              Alert.alert(
+                "✅ Data Cleared",
+                "All data has been successfully deleted. You can now upload a new CSV file.",
+                [{ text: "OK" }]
+              );
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Failed to clear data';
+              Alert.alert('Clear Failed', msg, [{ text: 'OK' }]);
+            }
           }
         }
       ]
@@ -244,8 +250,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Google Sheets Integration */}
-      <GoogleSheetsIntegration />
+      {/* Google Sheets Integration intentionally hidden for MVP beta */}
 
       {/* Developer Tools Section */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>

@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Product, OrderItem, StocktakeItem, PurchaseOrder } from '@/types/inventory';
 import { suppliers as mockSuppliers } from '@/mocks/suppliers';
 import { SupabaseService } from '@/services/supabaseService';
-import { supabase, getCurrentUser, isSupabaseConfigured } from '@/lib/supabase';
+import { supabase, getCurrentUser, isSupabaseConfigured, signOut as signOutFromSupabase } from '@/lib/supabase';
 
 interface SupabaseInventoryState {
   products: Product[];
@@ -100,8 +100,7 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
       
       signOut: async () => {
         try {
-          const { signOut } = await import('@/lib/supabase');
-          await signOut();
+          await signOutFromSupabase();
           set({ 
             user: null, 
             isAuthenticated: false, 

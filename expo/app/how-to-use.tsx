@@ -21,8 +21,9 @@ const guideSteps: GuideStep[] = [
     description: 'Get your inventory into SmartStock',
     icon: Upload,
     steps: [
-      'Go to Settings → Google Sheets Integration',
-      'Connect your Google account and create a new sheet',
+      'Go to Settings → Import Products (CSV)',
+      'Export your existing stock list from Excel or Sheets as a CSV file',
+      'Select the CSV file to import all products at once',
       'Or manually add products in the Products tab',
       'Tap the + button to add new items',
       'Fill in product name, SKU, price, and current stock',
@@ -40,7 +41,7 @@ const guideSteps: GuideStep[] = [
       'Tap "Edit Product" to modify information',
       'Update price, current stock, minimum stock level',
       'Add or change product description',
-      'Save changes - they sync to Google Sheets if connected'
+      'Save changes - they sync to the cloud automatically'
     ]
   },
   {
@@ -86,17 +87,17 @@ const guideSteps: GuideStep[] = [
     ]
   },
   {
-    id: 'google-sheets',
-    title: 'Google Sheets Integration',
-    description: 'Sync data with Google Sheets',
+    id: 'cloud-sync',
+    title: 'Cloud Sync & Multi-Device',
+    description: 'Access your data from any device',
     icon: Package,
     steps: [
-      'Go to Settings and find Google Sheets Integration',
-      'Click "Initialize Google Sheets"',
-      'Follow the authentication process',
-      'Your data will sync automatically',
-      'Changes in the app update the sheet',
-      'Multiple devices can access the same data'
+      'Sign in with the same account on any device',
+      'All inventory data is stored securely in the cloud',
+      'Changes sync automatically across devices',
+      'No manual backup needed',
+      'Log out anytime to switch accounts',
+      'Your data stays private to your account'
     ]
   }
 ];

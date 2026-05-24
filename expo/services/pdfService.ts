@@ -1,10 +1,12 @@
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as Print from 'expo-print';
 import { formatDate } from '@/utils/dateUtils';
 
 export interface POData {
   id: string;
   supplierName: string;
+  /** Supplier email snapshot stored on the PO at submission time. */
+  supplierEmail?: string;
   date: string;
   items: Array<{
     barcode: string;
@@ -141,6 +143,7 @@ function generatePurchaseOrderHTML(poData: POData): string {
       <div class="supplier-info">
         <div class="section-title">To:</div>
         <div><strong>${poData.supplierName}</strong></div>
+        ${poData.supplierEmail ? `<div>${poData.supplierEmail}</div>` : ''}
       </div>
       
       <div class="ship-to">
@@ -183,89 +186,41 @@ function generatePurchaseOrderHTML(poData: POData): string {
   `;
 }
 
+/**
+ * Generates a real PDF (native) or printable HTML blob (web) from a purchase order.
+ * On native we use expo-print's `printToFileAsync` which produces an actual `.pdf` file
+ * that opens in any iOS/Android PDF viewer and can be attached to emails.
+ * On web we return a blob URL pointing to printable HTML — the browser's print dialog
+ * (Save as PDF) handles the conversion.
+ */
 export async function generatePurchaseOrderPDF(poData: POData): Promise<string> {
   try {
-    const poNumber = `PO-${String(poData.id).slice(-4).padStart(4, '0')}`;
-    const fileName = `PO_${poNumber}_${poData.supplierName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-    
+    const htmlContent = generatePurchaseOrderHTML(poData);
+
     if (Platform.OS === 'web') {
-      // For web, generate HTML and create a printable version
-      const htmlContent = generatePurchaseOrderHTML(poData);
-      
-      // Create a blob with the HTML content
       const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      
-      // For now, return the HTML blob URL - user can print to PDF
-      return url;
-    } else {
-      // For mobile, create a simple text-based file
-      const textContent = generatePurchaseOrderText(poData);
-      const fileUri = `${FileSystem.documentDirectory}${fileName.replace('.pdf', '.txt')}`;
-      
-      await FileSystem.writeAsStringAsync(fileUri, textContent, {
-        encoding: FileSystem.EncodingType.UTF8
-      });
-      
-      return fileUri;
+      return URL.createObjectURL(blob);
     }
+
+    const { uri } = await Print.printToFileAsync({
+      html: htmlContent,
+      base64: false,
+    });
+    return uri;
   } catch (error) {
     console.error('Error generating PDF:', error);
     throw new Error('Failed to generate PDF');
   }
 }
 
-// Generate text version for mobile
-function generatePurchaseOrderText(poData: POData): string {
-  const poNumber = `PO-${String(poData.id).slice(-4).padStart(4, '0')}`;
-  const orderDate = formatDate(new Date(poData.date));
-  const totalItems = poData.items.reduce((sum, item) => sum + item.quantity, 0);
-  
-  const itemsList = poData.items.map((item, index) => 
-    `${index + 1}. ${item.name}\n   Code: ${item.barcode}\n   Quantity: ${item.quantity}\n`
-  ).join('\n');
-  
-  return `
-LIFESTYLE WINDOWS
-PURCHASE ORDER
-
-=====================================
-
-Order Date: ${orderDate}
-PO Number: ${poNumber}
-Quote Ref #: TBD
-
-To: ${poData.supplierName}
-
-Ship to:
-Lifestyle Windows
-14-16 Link Crescent
-Coolum Beach 4573
-Phone: 5351 1858
-Fax: 5351 1903
-
-Shipping Method: Road Transport
-Due Date: ASAP
-
-=====================================
-ITEMS ORDERED:
-=====================================
-
-${itemsList}
-
-Total Items: ${totalItems}
-
-Thank you for your business!
-
-=====================================
-  `;
-}
-
 export async function generateBase64PDF(poData: POData): Promise<string> {
   try {
-    // For now, return the HTML content as base64
     const htmlContent = generatePurchaseOrderHTML(poData);
-    return btoa(htmlContent);
+    if (Platform.OS === 'web') {
+      return btoa(unescape(encodeURIComponent(htmlContent)));
+    }
+    const { base64 } = await Print.printToFileAsync({ html: htmlContent, base64: true });
+    return base64 || '';
   } catch (error) {
     console.error('Error generating base64 PDF:', error);
     throw new Error('Failed to generate PDF');

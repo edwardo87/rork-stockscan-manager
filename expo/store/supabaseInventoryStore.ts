@@ -56,6 +56,7 @@ interface SupabaseInventoryState {
   // Product Management
   setProducts: (products: Product[]) => void;
   loadProducts: () => Promise<void>;
+  loadPurchaseOrders: () => Promise<void>;
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (productId: string, updatedProduct: Partial<Product>) => Promise<void>;
   importProductsFromCSV: (products: Product[]) => Promise<void>;
@@ -117,8 +118,10 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           set({ user, isAuthenticated: !!user });
           
           if (user) {
-            // Load products when user is authenticated
+            // Load products and previously-submitted purchase orders so the
+            // PO Preview screen and history survive logout/login and reopen.
             await get().loadProducts();
+            await get().loadPurchaseOrders();
           }
         } catch (error) {
           console.error('Error checking auth status:', error);
@@ -278,6 +281,24 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         await get().updateProduct(productId, { currentStock: newStock });
       },
 
+      loadPurchaseOrders: async () => {
+        const state = get();
+        if (!state.isSupabaseEnabled || !state.isAuthenticated) {
+          return;
+        }
+        try {
+          const orders = await SupabaseService.getPurchaseOrders();
+          set({
+            purchaseOrders: orders,
+            lastSyncTime: new Date().toISOString(),
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to load purchase orders';
+          console.error('Error loading purchase orders:', error);
+          set({ error: errorMessage });
+        }
+      },
+
       addToOrder: (product, quantity) => set((state) => {
         const existingItem = state.currentOrderItems.find(item => item.productId === product.id);
         
@@ -344,7 +365,15 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
             };
           });
           
-          // Submit to Supabase if available
+          // Attach supplier_email snapshot from the current supplier list so
+          // historical orders retain the address used at submission time.
+          for (const o of newOrders) {
+            const sup = state.suppliers.find(s => s.name === o.supplierName);
+            o.supplierEmail = sup?.email || undefined;
+          }
+
+          // Submit to Supabase if available, then reload from Supabase so the
+          // returned database UUIDs replace the local placeholder ids.
           if (state.isSupabaseEnabled && state.isAuthenticated) {
             for (const order of newOrders) {
               await SupabaseService.createPurchaseOrder(order, order.items);
@@ -383,6 +412,14 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
             isLoading: false,
             lastSyncTime: new Date().toISOString()
           });
+
+          // Reconcile with Supabase so subsequent reads use real DB UUIDs and
+          // any future logout/login surfaces the same records.
+          if (state.isSupabaseEnabled && state.isAuthenticated) {
+            get().loadPurchaseOrders().catch(err =>
+              console.error('Failed to reload purchase orders after submit:', err)
+            );
+          }
 
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Failed to submit order';
@@ -517,6 +554,7 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           
           if (event === 'SIGNED_IN' && user) {
             get().loadProducts();
+            get().loadPurchaseOrders();
           } else if (event === 'SIGNED_OUT') {
             set({ 
               products: [], 

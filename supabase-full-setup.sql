@@ -91,12 +91,19 @@ create table if not exists public.purchase_orders (
   user_id        uuid not null references public.users(id) on delete cascade,
   supplier_id    text not null default '',
   supplier_name  text not null default '',
+  supplier_email text,
   date           timestamptz not null default now(),
   status         text not null default 'draft' check (status in ('draft','submitted','received')),
   notes          text,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
+
+-- supplier_email column safety (in case table already existed without it).
+-- The app snapshots the supplier's email at the time the PO is submitted so
+-- historical orders keep the address used at the time even if the underlying
+-- product/supplier is later edited.
+alter table public.purchase_orders add column if not exists supplier_email text;
 
 create index if not exists purchase_orders_user_id_idx on public.purchase_orders(user_id);
 

@@ -240,6 +240,10 @@ export class SupabaseService {
         user_id: user.id,
         supplier_id: order.supplierId,
         supplier_name: order.supplierName,
+        // Snapshot the supplier email at the moment the PO is submitted, so
+        // historical orders keep the address used at the time even if the
+        // underlying product is later edited.
+        supplier_email: order.supplierEmail || null,
         date: order.date,
         status: order.status,
         notes: order.notes || null,
@@ -291,6 +295,77 @@ export class SupabaseService {
       console.error('Error creating reorder log entries:', JSON.stringify(reorderError, null, 2));
       // Don't throw error for reorder log as it's not critical
     }
+  }
+
+  /**
+   * Fetches all purchase orders (with their items) belonging to the current user.
+   * Returns them in app-shaped `PurchaseOrder` objects, newest first.
+   */
+  static async getPurchaseOrders(): Promise<PurchaseOrder[]> {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase is not configured');
+    }
+
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
+    const { data: orders, error: ordersError } = await supabase
+      .from('purchase_orders')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('date', { ascending: true });
+
+    if (ordersError) {
+      console.error('Error fetching purchase orders:', JSON.stringify(ordersError, null, 2));
+      const detail = ordersError.message || ordersError.details || ordersError.hint || 'Unknown database error';
+      throw new Error(`Failed to fetch purchase orders: ${detail}`);
+    }
+
+    if (!orders || orders.length === 0) {
+      return [];
+    }
+
+    const orderIds = orders.map(o => o.id);
+    const { data: items, error: itemsError } = await supabase
+      .from('order_items')
+      .select('*')
+      .in('purchase_order_id', orderIds);
+
+    if (itemsError) {
+      console.error('Error fetching order items:', JSON.stringify(itemsError, null, 2));
+      const detail = itemsError.message || itemsError.details || itemsError.hint || 'Unknown database error';
+      throw new Error(`Failed to fetch order items: ${detail}`);
+    }
+
+    const itemsByOrder = new Map<string, OrderItem[]>();
+    for (const it of items || []) {
+      const arr = itemsByOrder.get(it.purchase_order_id) || [];
+      arr.push({
+        productId: it.product_id,
+        barcode: it.barcode,
+        name: it.name,
+        quantity: Number(it.quantity),
+        supplier: it.supplier,
+      });
+      itemsByOrder.set(it.purchase_order_id, arr);
+    }
+
+    return orders.map(o => ({
+      id: o.id,
+      supplierId: o.supplier_id,
+      supplierName: o.supplier_name,
+      supplierEmail: (o as any).supplier_email || undefined,
+      date: o.date,
+      status: o.status as PurchaseOrder['status'],
+      notes: o.notes || undefined,
+      items: itemsByOrder.get(o.id) || [],
+    }));
   }
 
   // Stocktakes

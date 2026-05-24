@@ -107,6 +107,7 @@ export interface Database {
           user_id: string
           supplier_id: string
           supplier_name: string
+          supplier_email: string | null
           date: string
           status: 'draft' | 'submitted' | 'received'
           notes: string | null
@@ -118,6 +119,7 @@ export interface Database {
           user_id: string
           supplier_id: string
           supplier_name: string
+          supplier_email?: string | null
           date: string
           status?: 'draft' | 'submitted' | 'received'
           notes?: string | null
@@ -129,6 +131,7 @@ export interface Database {
           user_id?: string
           supplier_id?: string
           supplier_name?: string
+          supplier_email?: string | null
           date?: string
           status?: 'draft' | 'submitted' | 'received'
           notes?: string | null

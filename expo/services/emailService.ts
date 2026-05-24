@@ -57,6 +57,7 @@ export async function sendPurchaseOrderEmail(
     const poData: POData = {
       id: purchaseOrder.id,
       supplierName: purchaseOrder.supplierName,
+      supplierEmail: purchaseOrder.supplierEmail || supplierEmail,
       date: purchaseOrder.date,
       items: purchaseOrder.items,
       status: purchaseOrder.status
@@ -208,6 +209,7 @@ export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Pro
     const poData: POData = {
       id: purchaseOrder.id,
       supplierName: purchaseOrder.supplierName,
+      supplierEmail: purchaseOrder.supplierEmail,
       date: purchaseOrder.date,
       items: purchaseOrder.items,
       status: purchaseOrder.status
@@ -216,13 +218,16 @@ export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Pro
     const pdfUri = await generatePurchaseOrderPDF(poData);
     
     if (Platform.OS === 'web') {
-      // Open PDF in new tab
+      // Open the printable HTML in a new tab so the user can use the browser's
+      // "Save as PDF" / Print dialog.
       window.open(pdfUri, '_blank');
     } else {
-      // Share PDF on mobile
+      // expo-print returns a real .pdf file URI on native; share it so the
+      // user can open it in any PDF viewer or save it to Files.
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(pdfUri, {
           mimeType: 'application/pdf',
+          UTI: 'com.adobe.pdf',
           dialogTitle: `Preview Purchase Order PO-${String(purchaseOrder.id).slice(-4).padStart(4, '0')}`
         });
       }

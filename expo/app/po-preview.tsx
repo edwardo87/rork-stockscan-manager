@@ -25,18 +25,23 @@ export default function POPreviewScreen() {
 
   const handleSendPO = useCallback(async (purchaseOrder: any) => {
     if (!isMountedRef.current || isProcessing) return;
-    
+
     setIsProcessing(true);
-    
+
     try {
-      // Find supplier email if available
+      // Prefer the email snapshot saved on the PO at submission time; fall
+      // back to the supplier list (older orders may not have a snapshot).
       const supplier = suppliers.find(s => s.name === purchaseOrder.supplierName);
-      const supplierEmail = supplier?.email;
+      const supplierEmail = purchaseOrder.supplierEmail || supplier?.email;
+
+      // Show a one-line clarity message before any send action so users know
+      // emails come from their device's own mail app, not a backend service.
+      const senderNotice = "PO emails will be sent from your device's default mail app/account.";
 
       if (!supplierEmail) {
         Alert.alert(
           "No Email Address",
-          `No email address found for ${purchaseOrder.supplierName}. The email will open without a recipient address.`,
+          `${senderNotice}\n\nNo email address found for ${purchaseOrder.supplierName}. The email will open without a recipient address.`,
           [
             { 
               text: "Cancel", 
@@ -86,6 +91,22 @@ export default function POPreviewScreen() {
           ]
         );
       } else {
+        const proceed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Send Purchase Order',
+            `${senderNotice}\n\nTo: ${supplierEmail}`,
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Continue', onPress: () => resolve(true) },
+            ]
+          );
+        });
+
+        if (!proceed) {
+          setIsProcessing(false);
+          return;
+        }
+
         const success = await sendPurchaseOrderEmail(purchaseOrder, supplierEmail);
         if (isMountedRef.current) {
           if (success) {

@@ -47,6 +47,8 @@ export interface PurchaseOrder {
   id: string;
   supplierId: string;
   supplierName: string;
+  /** Supplier email snapshot at the time the PO was submitted (not derived live from products). */
+  supplierEmail?: string;
   date: string;
   items: OrderItem[];
   status: 'draft' | 'submitted' | 'received';

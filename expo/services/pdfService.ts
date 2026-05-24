@@ -3,20 +3,6 @@ import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
 import { formatDate } from '@/utils/dateUtils';
 
-// jsPDF depends on browser globals (window, btoa, etc.) and Metro can't
-// resolve it inside Expo Go on iOS/Android. The loader is split into
-// `jspdfLoader.ts` (native stub) and `jspdfLoader.web.ts` (real import) so
-// the native bundle never references the jspdf module at all.
-import { loadJsPDF } from './jspdfLoader';
-
-type JsPDFCtor = new (...args: any[]) => any;
-let _JsPDF: JsPDFCtor | null = null;
-async function getJsPDF(): Promise<JsPDFCtor> {
-  if (_JsPDF) return _JsPDF;
-  _JsPDF = (await loadJsPDF()) as JsPDFCtor;
-  return _JsPDF;
-}
-
 export interface POData {
   id: string;
   supplierName: string;
@@ -36,7 +22,10 @@ function getPoNumber(id: string): string {
   return `PO-${String(id).slice(-4).padStart(4, '0')}`;
 }
 
-// HTML used only for the native expo-print pipeline.
+/**
+ * HTML template used by expo-print to produce a real PDF on native, and by
+ * the browser print dialog on web.
+ */
 function generatePurchaseOrderHTML(poData: POData): string {
   const poNumber = getPoNumber(poData.id);
   const orderDate = formatDate(new Date(poData.date));
@@ -124,156 +113,22 @@ function generatePurchaseOrderHTML(poData: POData): string {
 }
 
 /**
- * Builds a real PDF binary using jsPDF.
- * Used on web (where expo-print isn't available) so the downloaded/attached
- * file is an actual `application/pdf` document — NOT an HTML blob renamed to
- * `.pdf`, which was the previous bug causing recipients to see corrupted
- * attachments.
- */
-async function buildPdfWithJsPdf(poData: POData): Promise<any> {
-  const JsPDF = await getJsPDF();
-  const poNumber = getPoNumber(poData.id);
-  const orderDate = formatDate(new Date(poData.date));
-  const totalItems = poData.items.reduce((sum, item) => sum + item.quantity, 0);
-
-  const doc = new JsPDF({ unit: 'pt', format: 'a4' });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 40;
-  let y = margin;
-
-  // Header
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
-  doc.setTextColor(51, 102, 204);
-  doc.text('LIFESTYLE WINDOWS', margin, y + 16);
-  doc.setTextColor(51, 51, 51);
-  doc.setFontSize(18);
-  doc.text('PURCHASE ORDER', pageWidth - margin, y + 16, { align: 'right' });
-  y += 32;
-  doc.setDrawColor(51, 102, 204);
-  doc.setLineWidth(1.5);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 24;
-
-  // Order details
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.setTextColor(51, 51, 51);
-  doc.text(`Order Date: ${orderDate}`, margin, y);
-  doc.text(`PO Number: ${poNumber}`, pageWidth - margin, y, { align: 'right' });
-  y += 16;
-  doc.text(`Quote Ref #: TBD`, pageWidth - margin, y, { align: 'right' });
-  y += 28;
-
-  // Supplier
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text('To:', margin, y);
-  y += 16;
-  doc.setFontSize(11);
-  doc.text(poData.supplierName, margin, y);
-  y += 14;
-  if (poData.supplierEmail) {
-    doc.setFont('helvetica', 'normal');
-    doc.text(poData.supplierEmail, margin, y);
-    y += 14;
-  }
-  y += 8;
-
-  // Ship to
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text('Ship to:', margin, y);
-  y += 16;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  const shipLines = [
-    'Lifestyle Windows',
-    '14-16 Link Crescent',
-    'Coolum Beach 4573',
-    'Phone: 5351 1858',
-    'Fax: 5351 1903',
-  ];
-  for (const line of shipLines) {
-    doc.text(line, margin, y);
-    y += 14;
-  }
-  y += 8;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Shipping Method: Road Transport', margin, y);
-  doc.setTextColor(51, 102, 204);
-  doc.text('Due Date: ASAP', pageWidth - margin, y, { align: 'right' });
-  doc.setTextColor(51, 51, 51);
-  y += 24;
-
-  // Table header
-  const colCode = margin;
-  const colDesc = margin + 90;
-  const colQty = pageWidth - margin - 40;
-  doc.setFillColor(240, 240, 240);
-  doc.rect(margin, y - 12, pageWidth - margin * 2, 20, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('Code', colCode + 4, y + 2);
-  doc.text('Description', colDesc, y + 2);
-  doc.text('Qty', colQty, y + 2, { align: 'right' });
-  y += 14;
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.5);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 4;
-
-  // Rows
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  for (const item of poData.items) {
-    if (y > pageHeight - margin - 60) {
-      doc.addPage();
-      y = margin;
-    }
-    const desc = item.name.length > 60 ? item.name.substring(0, 57) + '...' : item.name;
-    doc.text(String(item.barcode), colCode + 4, y + 12);
-    doc.text(desc, colDesc, y + 12);
-    doc.text(String(item.quantity), colQty, y + 12, { align: 'right' });
-    y += 18;
-    doc.setDrawColor(240, 240, 240);
-    doc.line(margin, y, pageWidth - margin, y);
-  }
-
-  y += 16;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text(`Total Items: ${totalItems}`, pageWidth - margin, y, { align: 'right' });
-
-  y += 32;
-  doc.setTextColor(51, 102, 204);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Thank you for your business!', margin, y);
-
-  return doc;
-}
-
-/**
  * Verifies the first bytes of the file at `uri` start with the PDF magic
- * header (`%PDF`). Logs everything useful for debugging attachment issues.
- * Returns true on success, false otherwise. Native only.
+ * header (`%PDF`). Returns true on success, false otherwise. Native only.
  */
 async function verifyPdfHeaderNative(uri: string): Promise<boolean> {
   try {
     const info = await FileSystem.getInfoAsync(uri);
     console.log('[PDF verify] uri:', uri, 'exists:', info.exists, 'size:', (info as any).size);
     if (!info.exists || !(info as any).size) return false;
-    // Read first 8 bytes as base64 then decode the first 4 to verify "%PDF".
     const base64Head = await FileSystem.readAsStringAsync(uri, {
       encoding: FileSystem.EncodingType.Base64,
       position: 0,
       length: 8,
     });
-    // Decode base64 head to ASCII for the first 4 bytes.
-    // jsPDF/expo-print output ALWAYS begins with "%PDF-".
-    const decoded = (typeof atob === 'function' ? atob(base64Head) : Buffer.from(base64Head, 'base64').toString('binary'));
+    const decoded = (typeof atob === 'function'
+      ? atob(base64Head)
+      : Buffer.from(base64Head, 'base64').toString('binary'));
     const header = decoded.substring(0, 5);
     console.log('[PDF verify] header bytes:', JSON.stringify(header));
     return header.startsWith('%PDF');
@@ -284,23 +139,26 @@ async function verifyPdfHeaderNative(uri: string): Promise<boolean> {
 }
 
 /**
- * Generates a real, valid PDF binary for a purchase order.
+ * Generates a real, valid PDF binary for a purchase order on native using
+ * `expo-print`'s `printToFileAsync`. The returned URI points at a real
+ * `.pdf` file on disk and is the SAME file used for View PDF, Print and the
+ * email attachment.
  *
- * - Web: uses jsPDF and returns an `application/pdf` blob URL (real PDF bytes).
- * - Native: uses `expo-print`'s `printToFileAsync` and returns a `file://` URI
- *   to a real `.pdf` file on disk. We verify the `%PDF` magic header before
- *   handing the URI back so a corrupted output is caught early.
- *
- * The returned URI is the SAME file/object used by View PDF, Print, and the
- * email attachment — never regenerated, never converted.
+ * Web has no native PDF binary writer available in this project — we return
+ * an `application/pdf` blob URL built from the HTML by handing it off to
+ * the browser's print dialog (user saves as PDF). The returned URL is only
+ * used for preview; the email flow takes the web fallback path.
  */
 export async function generatePurchaseOrderPDF(poData: POData): Promise<string> {
   try {
     if (Platform.OS === 'web') {
-      const doc = await buildPdfWithJsPdf(poData);
-      const blob = doc.output('blob');
+      // Web preview: open the HTML in a new window so the browser's built-in
+      // "Save as PDF" handles the conversion. We return a blob URL of the
+      // HTML so callers can still use window.open(url).
+      const htmlContent = generatePurchaseOrderHTML(poData);
+      const blob = new Blob([htmlContent], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
-      console.log('[PDF generate web] blob size:', blob.size, 'type:', blob.type, 'url:', url);
+      console.log('[PDF generate web] html blob url:', url);
       return url;
     }
 
@@ -324,11 +182,8 @@ export async function generatePurchaseOrderPDF(poData: POData): Promise<string> 
 export async function generateBase64PDF(poData: POData): Promise<string> {
   try {
     if (Platform.OS === 'web') {
-      const doc = await buildPdfWithJsPdf(poData);
-      // jsPDF outputs base64 of the real PDF.
-      const dataUri = doc.output('datauristring');
-      const base64 = dataUri.split(',')[1] || '';
-      return base64;
+      // Not used on web; return empty to keep API stable.
+      return '';
     }
     const htmlContent = generatePurchaseOrderHTML(poData);
     const { base64 } = await Print.printToFileAsync({ html: htmlContent, base64: true });

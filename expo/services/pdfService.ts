@@ -113,83 +113,38 @@ function generatePurchaseOrderHTML(poData: POData): string {
 }
 
 /**
- * Verifies the first bytes of the file at `uri` start with the PDF magic
- * header (`%PDF`). Returns true on success, false otherwise. Native only.
- */
-async function verifyPdfHeaderNative(uri: string): Promise<boolean> {
-  try {
-    const info = await FileSystem.getInfoAsync(uri);
-    console.log('[PDF verify] uri:', uri, 'exists:', info.exists, 'size:', (info as any).size);
-    if (!info.exists || !(info as any).size) return false;
-    const base64Head = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-      position: 0,
-      length: 8,
-    });
-    const decoded = (typeof atob === 'function'
-      ? atob(base64Head)
-      : Buffer.from(base64Head, 'base64').toString('binary'));
-    const header = decoded.substring(0, 5);
-    console.log('[PDF verify] header bytes:', JSON.stringify(header));
-    return header.startsWith('%PDF');
-  } catch (e) {
-    console.log('[PDF verify] failed to read header', e);
-    return false;
-  }
-}
-
-/**
- * Generates a real, valid PDF binary for a purchase order on native using
- * `expo-print`'s `printToFileAsync`. The returned URI points at a real
- * `.pdf` file on disk and is the SAME file used for View PDF, Print and the
- * email attachment.
+ * Generates a PDF for a purchase order.
  *
- * Web has no native PDF binary writer available in this project — we return
- * an `application/pdf` blob URL built from the HTML by handing it off to
- * the browser's print dialog (user saves as PDF). The returned URL is only
- * used for preview; the email flow takes the web fallback path.
+ * Native: uses `expo-print`'s `printToFileAsync` — this returns a real
+ * application/pdf file. We do NOT byte-verify it; expo-print is the
+ * platform-blessed PDF generator and adding our own header reads has only
+ * caused crashes in Expo Go (Buffer undefined, partial-read APIs varying
+ * between SDK versions). If expo-print fails it throws, and we surface
+ * that error directly.
+ *
+ * Web: returns an HTML blob URL for preview/print only — the email path
+ * has its own web fallback that does not depend on this URL being a PDF.
  */
 export async function generatePurchaseOrderPDF(poData: POData): Promise<string> {
-  try {
-    if (Platform.OS === 'web') {
-      // Web preview: open the HTML in a new window so the browser's built-in
-      // "Save as PDF" handles the conversion. We return a blob URL of the
-      // HTML so callers can still use window.open(url).
-      const htmlContent = generatePurchaseOrderHTML(poData);
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      console.log('[PDF generate web] html blob url:', url);
-      return url;
-    }
+  const htmlContent = generatePurchaseOrderHTML(poData);
 
-    const htmlContent = generatePurchaseOrderHTML(poData);
-    const { uri } = await Print.printToFileAsync({
-      html: htmlContent,
-      base64: false,
-    });
-    console.log('[PDF generate native] printToFileAsync uri:', uri);
-    const ok = await verifyPdfHeaderNative(uri);
-    if (!ok) {
-      throw new Error('Generated file is not a valid PDF (missing %PDF header)');
-    }
-    return uri;
-  } catch (error) {
-    console.error('Error generating PDF:', error);
-    throw new Error(error instanceof Error ? error.message : 'Failed to generate PDF');
+  if (Platform.OS === 'web') {
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    console.log('[PDF] web html blob url:', url);
+    return url;
   }
-}
 
-export async function generateBase64PDF(poData: POData): Promise<string> {
-  try {
-    if (Platform.OS === 'web') {
-      // Not used on web; return empty to keep API stable.
-      return '';
-    }
-    const htmlContent = generatePurchaseOrderHTML(poData);
-    const { base64 } = await Print.printToFileAsync({ html: htmlContent, base64: true });
-    return base64 || '';
-  } catch (error) {
-    console.error('Error generating base64 PDF:', error);
-    throw new Error('Failed to generate PDF');
+  const { uri } = await Print.printToFileAsync({ html: htmlContent, base64: false });
+  console.log('[PDF] native printToFileAsync uri:', uri);
+
+  // Sanity check only: file exists and has size. No byte reads.
+  const info = await FileSystem.getInfoAsync(uri);
+  const size = (info as { exists: boolean; size?: number }).size;
+  console.log('[PDF] native file exists:', info.exists, 'size:', size);
+  if (!info.exists || !size || size <= 0) {
+    throw new Error('expo-print returned an empty or missing file');
   }
+
+  return uri;
 }

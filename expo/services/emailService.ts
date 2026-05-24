@@ -6,64 +6,22 @@ import { PurchaseOrder } from '@/types/inventory';
 import { generatePurchaseOrderPDF, POData } from './pdfService';
 
 /**
- * Copies the freshly-generated native PDF from expo-print's cache location to
- * documentDirectory with an explicit `.pdf` filename, then verifies the file
- * still begins with the `%PDF` magic header. Mail clients (Gmail/Outlook on
- * Android in particular) rely on both the extension AND the file content to
- * pick the correct MIME type for the attachment — if either is wrong the
- * recipient sees a corrupted file.
- *
- * Returns the prepared `file://` URI. Native only.
+ * Copies the PDF returned by expo-print (which lives in the cache dir with a
+ * random UUID filename) into documentDirectory under a stable
+ * `PO-XXXX-Supplier.pdf` name. Mail clients use the filename + extension to
+ * pick the MIME type — a stable, dot-pdf filename in the document directory
+ * is the most reliable way to get Gmail/Outlook to deliver the attachment
+ * as application/pdf.
  */
-async function readPdfHeaderNative(uri: string): Promise<string> {
-  const head = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
-    position: 0,
-    length: 8,
-  });
-  const decoded =
-    typeof atob === 'function'
-      ? atob(head)
-      : Buffer.from(head, 'base64').toString('binary');
-  return decoded.substring(0, 5);
-}
-
-/**
- * Strict validation: file:// URI, .pdf extension, exists, size > 0, %PDF header.
- * Throws with a clear message if any check fails — callers must stop before
- * passing a bad attachment to MailComposer.
- */
-async function validatePdfFileNative(uri: string, label: string): Promise<void> {
-  if (!uri.startsWith('file://')) {
-    throw new Error(`${label} URI is not a file:// path: ${uri}`);
-  }
-  if (!uri.toLowerCase().endsWith('.pdf')) {
-    throw new Error(`${label} filename does not end in .pdf: ${uri}`);
-  }
-  const info = await FileSystem.getInfoAsync(uri);
-  const size = (info as any).size;
-  console.log(`[PO email] ${label} exists:`, info.exists, 'size:', size, 'uri:', uri);
-  if (!info.exists) throw new Error(`${label} file does not exist`);
-  if (!size || size <= 0) throw new Error(`${label} file is empty`);
-  const header = await readPdfHeaderNative(uri);
-  console.log(`[PO email] ${label} header bytes:`, JSON.stringify(header));
-  if (!header.startsWith('%PDF')) {
-    throw new Error(`${label} is not a valid PDF (missing %PDF header)`);
-  }
-}
-
-async function preparePdfForAttachmentNative(
+async function copyPdfForAttachment(
   sourceUri: string,
   poNumber: string,
-  supplierName: string
+  supplierName: string,
 ): Promise<string> {
-  // Allow letters, numbers, dash, underscore only.
-  const safeSupplier = supplierName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeSupplier = supplierName.replace(/[^a-zA-Z0-9_-]/g, '_') || 'Supplier';
   const fileName = `${poNumber}-${safeSupplier}.pdf`;
-  const destDir = (FileSystem as any).documentDirectory ?? (FileSystem as any).cacheDirectory;
-  if (!destDir) {
-    throw new Error('No writable document directory available for PDF attachment');
-  }
+  const destDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+  if (!destDir) throw new Error('No writable directory available for PDF attachment');
   const destUri = `${destDir}${fileName}`;
 
   const existing = await FileSystem.getInfoAsync(destUri);
@@ -72,13 +30,15 @@ async function preparePdfForAttachmentNative(
   }
   await FileSystem.copyAsync({ from: sourceUri, to: destUri });
 
-  await validatePdfFileNative(destUri, 'copied');
+  const info = await FileSystem.getInfoAsync(destUri);
+  const size = (info as { exists: boolean; size?: number }).size;
+  console.log('[PO email] copied attachment uri:', destUri, 'exists:', info.exists, 'size:', size);
+  if (!info.exists || !size || size <= 0) {
+    throw new Error('Copied PDF is empty or missing');
+  }
   return destUri;
 }
 
-/**
- * Formats a purchase order into email content
- */
 export function formatPurchaseOrderEmail(purchaseOrder: PurchaseOrder): {
   subject: string;
   body: string;
@@ -86,18 +46,11 @@ export function formatPurchaseOrderEmail(purchaseOrder: PurchaseOrder): {
   const { supplierName, date, items, id } = purchaseOrder;
   const poNumber = `PO-${String(id).slice(-4).padStart(4, '0')}`;
   const formattedDate = new Date(date).toLocaleDateString();
-
   const subject = `Purchase Order ${poNumber} - ${supplierName}`;
-
-  const itemsTable = items.map((item, index) =>
-    `${index + 1}. ${item.name}
-   Code: ${item.barcode}
-   Quantity: ${item.quantity}
-   
-`).join('');
-
+  const itemsTable = items
+    .map((item, index) => `${index + 1}. ${item.name}\n   Code: ${item.barcode}\n   Quantity: ${item.quantity}\n`)
+    .join('');
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-
   const body = `Dear ${supplierName},
 
 Please see attached purchase order. Due ASAP. Thank you.
@@ -121,19 +74,18 @@ Phone: 5351 1858 | Fax: 5351 1903`;
 /**
  * Opens email client with purchase order PDF attachment.
  *
- * Native: generates one real PDF via expo-print, verifies its `%PDF` header,
- * copies it to documentDirectory with a stable `.pdf` filename, and hands
- * THAT exact file URI to MailComposer — no second PDF, no transformation,
- * no base64 round-trip. The email compose screen opens with the attachment
- * already included; the user never sees a download step.
+ * Native: generates one PDF via expo-print, copies it to documentDirectory
+ * under `PO-XXXX-Supplier.pdf`, and hands that URI to MailComposer. The
+ * mail compose screen opens with the PDF visibly attached — no download
+ * step, no second PDF.
  *
- * Web: generates a real PDF via jsPDF, triggers a single silent browser
- * download (since browsers cannot pre-attach files to a mail client), then
- * opens mailto. The downloaded file IS a valid `application/pdf`.
+ * Web: cannot pre-attach files to a mail client. Downloads the HTML
+ * preview and opens mailto with a note. (Web is a fallback; the spec
+ * targets native field testing.)
  */
 export async function sendPurchaseOrderEmail(
   purchaseOrder: PurchaseOrder,
-  supplierEmail?: string
+  supplierEmail?: string,
 ): Promise<boolean> {
   try {
     const poData: POData = {
@@ -147,91 +99,72 @@ export async function sendPurchaseOrderEmail(
 
     const poNumber = `PO-${String(purchaseOrder.id).slice(-4).padStart(4, '0')}`;
     const subject = `Purchase Order ${poNumber} - ${purchaseOrder.supplierName}`;
-    const body = "Please see attached purchase order. Due ASAP. Thank you.";
+    const body = 'Please see attached purchase order. Due ASAP. Thank you.';
 
-    const isMailAvailable = Platform.OS !== 'web' ? await MailComposer.isAvailableAsync() : false;
-
-    if (isMailAvailable && Platform.OS !== 'web') {
-      // SAME pipeline as View PDF / Print — generate once, reuse everywhere.
+    if (Platform.OS !== 'web') {
+      const mailAvailable = await MailComposer.isAvailableAsync();
       const generatedUri = await generatePurchaseOrderPDF(poData);
       console.log('[PO email] generated PDF URI:', generatedUri);
-      await validatePdfFileNative(generatedUri, 'generated');
+      const attachmentUri = await copyPdfForAttachment(generatedUri, poNumber, purchaseOrder.supplierName);
 
-      const attachmentUri = await preparePdfForAttachmentNative(
-        generatedUri,
-        poNumber,
-        purchaseOrder.supplierName
-      );
-
-      const emailOptions: MailComposer.MailComposerOptions = {
-        recipients: supplierEmail ? [supplierEmail] : [],
-        subject,
-        body,
-        attachments: [attachmentUri],
-      };
-
-      const result = await MailComposer.composeAsync(emailOptions);
-      console.log('[PO email] MailComposer result status:', result.status);
-      return result.status === MailComposer.MailComposerStatus.SENT;
-
-    } else if (Platform.OS === 'web') {
-      // jsPDF produces a real application/pdf blob — the download below is a
-      // proper PDF, not HTML masquerading as one.
-      const pdfUri = await generatePurchaseOrderPDF(poData);
-      console.log('[PO email web] blob URL:', pdfUri);
-
-      const link = document.createElement('a');
-      link.href = pdfUri;
-      link.download = `${poNumber}_${purchaseOrder.supplierName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      const encodedSubject = encodeURIComponent(subject);
-      const encodedBody = encodeURIComponent(body + "\n\nNote: PDF attachment downloaded — please attach the downloaded file to this email.");
-      const encodedEmail = supplierEmail ? encodeURIComponent(supplierEmail) : '';
-      const mailtoUrl = `mailto:${encodedEmail}?subject=${encodedSubject}&body=${encodedBody}`;
-
-      try {
-        await Linking.openURL(mailtoUrl);
-      } catch (e) {
-        console.log('Could not open email client:', e);
+      if (mailAvailable) {
+        const result = await MailComposer.composeAsync({
+          recipients: supplierEmail ? [supplierEmail] : [],
+          subject,
+          body,
+          attachments: [attachmentUri],
+        });
+        console.log('[PO email] MailComposer result status:', result.status);
+        return result.status === MailComposer.MailComposerStatus.SENT;
       }
 
-      // Release the blob URL after a delay so the download has time to start.
-      setTimeout(() => {
-        try { URL.revokeObjectURL(pdfUri); } catch {}
-      }, 5000);
-
-      return true;
-
-    } else {
-      // Native fallback (no mail configured): share the same generated PDF.
-      const pdfUri = await generatePurchaseOrderPDF(poData);
+      // No mail client configured — fall back to native share sheet so the
+      // user can pick Gmail/Outlook/etc. and the attachment still comes
+      // through correctly.
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(pdfUri, {
+        await Sharing.shareAsync(attachmentUri, {
           mimeType: 'application/pdf',
           dialogTitle: `Share Purchase Order ${poNumber}`,
           UTI: 'com.adobe.pdf',
         });
         return true;
-      } else {
-        setTimeout(() => {
-          Alert.alert(
-            "Email Not Available",
-            "No email client is configured on this device. Please set up an email app to send purchase orders.",
-            [{ text: "OK" }]
-          );
-        }, 100);
-        return false;
       }
+
+      setTimeout(() => {
+        Alert.alert(
+          'Email Not Available',
+          'No email client is configured on this device. Please set up an email app to send purchase orders.',
+          [{ text: 'OK' }],
+        );
+      }, 100);
+      return false;
     }
 
+    // Web fallback — no real PDF generation available; download the HTML
+    // preview and open mailto. Web is not the target for field testing.
+    const previewUrl = await generatePurchaseOrderPDF(poData);
+    const link = document.createElement('a');
+    link.href = previewUrl;
+    link.download = `${poNumber}_${purchaseOrder.supplierName.replace(/[^a-zA-Z0-9]/g, '_')}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    const mailtoUrl = `mailto:${supplierEmail ? encodeURIComponent(supplierEmail) : ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body + '\n\nNote: PO downloaded — please attach the downloaded file to this email.')}`;
+    try {
+      await Linking.openURL(mailtoUrl);
+    } catch (e) {
+      console.log('Could not open email client:', e);
+    }
+    setTimeout(() => {
+      try { URL.revokeObjectURL(previewUrl); } catch {}
+    }, 5000);
+    return true;
   } catch (error) {
     console.error('Error sending purchase order email:', error);
     const msg = error instanceof Error ? error.message : 'Failed to generate or send purchase order.';
     setTimeout(() => {
-      Alert.alert("Email Error", msg, [{ text: "OK" }]);
+      Alert.alert('Email Error', msg, [{ text: 'OK' }]);
     }, 100);
     return false;
   }
@@ -241,11 +174,11 @@ export async function sendPurchaseOrderEmail(
  * Sends multiple purchase orders via email (one for each supplier)
  */
 export async function sendMultiplePurchaseOrders(
-  purchaseOrders: PurchaseOrder[]
+  purchaseOrders: PurchaseOrder[],
 ): Promise<void> {
   if (purchaseOrders.length === 0) {
     setTimeout(() => {
-      Alert.alert("No Orders", "No purchase orders to send.", [{ text: "OK" }]);
+      Alert.alert('No Orders', 'No purchase orders to send.', [{ text: 'OK' }]);
     }, 100);
     return;
   }
@@ -257,26 +190,28 @@ export async function sendMultiplePurchaseOrders(
 
   setTimeout(() => {
     Alert.alert(
-      "Multiple Suppliers",
+      'Multiple Suppliers',
       `You have ${purchaseOrders.length} purchase orders for different suppliers. How would you like to send them?`,
       [
-        { text: "Cancel", style: "cancel" },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: "Send All",
+          text: 'Send All',
           onPress: async () => {
             for (const po of purchaseOrders) {
               await sendPurchaseOrderEmail(po);
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              await new Promise((resolve) => setTimeout(resolve, 1000));
             }
           },
         },
-      ]
+      ],
     );
   }, 100);
 }
 
 /**
- * Preview PDF — uses the SAME generated PDF as the email/print actions.
+ * Preview PDF — opens the same PDF that the email flow would attach.
+ * Native: share sheet with the file (lets the user View / Save / Open in).
+ * Web: opens the HTML preview in a new tab.
  */
 export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Promise<void> {
   try {
@@ -293,26 +228,26 @@ export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Pro
     console.log('[PO preview] pdf URI:', pdfUri);
 
     if (Platform.OS === 'web') {
-      // Open the real PDF blob in a new tab — the browser's built-in PDF
-      // viewer renders it. The user can save it from there using the
-      // viewer's download button if they want.
       window.open(pdfUri, '_blank');
+      return;
+    }
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(pdfUri, {
+        mimeType: 'application/pdf',
+        UTI: 'com.adobe.pdf',
+        dialogTitle: `Preview Purchase Order PO-${String(purchaseOrder.id).slice(-4).padStart(4, '0')}`,
+      });
     } else {
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(pdfUri, {
-          mimeType: 'application/pdf',
-          UTI: 'com.adobe.pdf',
-          dialogTitle: `Preview Purchase Order PO-${String(purchaseOrder.id).slice(-4).padStart(4, '0')}`,
-        });
-      }
+      Alert.alert('Preview Unavailable', 'Sharing is not available on this device.');
     }
   } catch (error) {
     console.error('Error previewing PDF:', error);
     setTimeout(() => {
       Alert.alert(
-        "Preview Error",
+        'Preview Error',
         error instanceof Error ? error.message : 'Failed to generate PDF preview.',
-        [{ text: "OK" }]
+        [{ text: 'OK' }],
       );
     }, 100);
   }

@@ -15,48 +15,64 @@ import { generatePurchaseOrderPDF, POData } from './pdfService';
  *
  * Returns the prepared `file://` URI. Native only.
  */
+async function readPdfHeaderNative(uri: string): Promise<string> {
+  const head = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+    position: 0,
+    length: 8,
+  });
+  const decoded =
+    typeof atob === 'function'
+      ? atob(head)
+      : Buffer.from(head, 'base64').toString('binary');
+  return decoded.substring(0, 5);
+}
+
+/**
+ * Strict validation: file:// URI, .pdf extension, exists, size > 0, %PDF header.
+ * Throws with a clear message if any check fails — callers must stop before
+ * passing a bad attachment to MailComposer.
+ */
+async function validatePdfFileNative(uri: string, label: string): Promise<void> {
+  if (!uri.startsWith('file://')) {
+    throw new Error(`${label} URI is not a file:// path: ${uri}`);
+  }
+  if (!uri.toLowerCase().endsWith('.pdf')) {
+    throw new Error(`${label} filename does not end in .pdf: ${uri}`);
+  }
+  const info = await FileSystem.getInfoAsync(uri);
+  const size = (info as any).size;
+  console.log(`[PO email] ${label} exists:`, info.exists, 'size:', size, 'uri:', uri);
+  if (!info.exists) throw new Error(`${label} file does not exist`);
+  if (!size || size <= 0) throw new Error(`${label} file is empty`);
+  const header = await readPdfHeaderNative(uri);
+  console.log(`[PO email] ${label} header bytes:`, JSON.stringify(header));
+  if (!header.startsWith('%PDF')) {
+    throw new Error(`${label} is not a valid PDF (missing %PDF header)`);
+  }
+}
+
 async function preparePdfForAttachmentNative(
   sourceUri: string,
   poNumber: string,
   supplierName: string
 ): Promise<string> {
-  const safeSupplier = supplierName.replace(/[^a-zA-Z0-9]/g, '_');
-  const fileName = `${poNumber}_${safeSupplier}.pdf`;
+  // Allow letters, numbers, dash, underscore only.
+  const safeSupplier = supplierName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fileName = `${poNumber}-${safeSupplier}.pdf`;
   const destDir = (FileSystem as any).documentDirectory ?? (FileSystem as any).cacheDirectory;
   if (!destDir) {
-    console.log('[PO email] no documentDirectory available, using source URI as-is');
-    return sourceUri;
+    throw new Error('No writable document directory available for PDF attachment');
   }
   const destUri = `${destDir}${fileName}`;
 
-  try {
-    const existing = await FileSystem.getInfoAsync(destUri);
-    if (existing.exists) {
-      await FileSystem.deleteAsync(destUri, { idempotent: true });
-    }
-    await FileSystem.copyAsync({ from: sourceUri, to: destUri });
-  } catch (e) {
-    console.log('[PO email] copy to documentDirectory failed, falling back to source URI', e);
-    return sourceUri;
+  const existing = await FileSystem.getInfoAsync(destUri);
+  if (existing.exists) {
+    await FileSystem.deleteAsync(destUri, { idempotent: true });
   }
+  await FileSystem.copyAsync({ from: sourceUri, to: destUri });
 
-  // Verify the copy still has the %PDF header.
-  try {
-    const head = await FileSystem.readAsStringAsync(destUri, {
-      encoding: FileSystem.EncodingType.Base64,
-      position: 0,
-      length: 8,
-    });
-    const decoded = (typeof atob === 'function' ? atob(head) : Buffer.from(head, 'base64').toString('binary'));
-    console.log('[PO email] attachment header bytes:', JSON.stringify(decoded.substring(0, 5)));
-    if (!decoded.startsWith('%PDF')) {
-      throw new Error('Attachment is not a valid PDF (missing %PDF header)');
-    }
-  } catch (e) {
-    console.log('[PO email] header verification failed', e);
-    throw e;
-  }
-
+  await validatePdfFileNative(destUri, 'copied');
   return destUri;
 }
 
@@ -139,23 +155,13 @@ export async function sendPurchaseOrderEmail(
       // SAME pipeline as View PDF / Print — generate once, reuse everywhere.
       const generatedUri = await generatePurchaseOrderPDF(poData);
       console.log('[PO email] generated PDF URI:', generatedUri);
-
-      const generatedInfo = await FileSystem.getInfoAsync(generatedUri);
-      console.log('[PO email] generated exists:', generatedInfo.exists, 'size:', (generatedInfo as any).size);
-      if (!generatedInfo.exists || !(generatedInfo as any).size) {
-        throw new Error('Generated PDF is missing or empty');
-      }
+      await validatePdfFileNative(generatedUri, 'generated');
 
       const attachmentUri = await preparePdfForAttachmentNative(
         generatedUri,
         poNumber,
         purchaseOrder.supplierName
       );
-      const attachmentInfo = await FileSystem.getInfoAsync(attachmentUri);
-      console.log('[PO email] attachment URI:', attachmentUri, 'exists:', attachmentInfo.exists, 'size:', (attachmentInfo as any).size);
-      if (!attachmentInfo.exists || !(attachmentInfo as any).size) {
-        throw new Error('Prepared attachment is missing or empty');
-      }
 
       const emailOptions: MailComposer.MailComposerOptions = {
         recipients: supplierEmail ? [supplierEmail] : [],
@@ -165,6 +171,7 @@ export async function sendPurchaseOrderEmail(
       };
 
       const result = await MailComposer.composeAsync(emailOptions);
+      console.log('[PO email] MailComposer result status:', result.status);
       return result.status === MailComposer.MailComposerStatus.SENT;
 
     } else if (Platform.OS === 'web') {

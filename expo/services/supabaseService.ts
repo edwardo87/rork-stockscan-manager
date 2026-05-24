@@ -383,13 +383,12 @@ export class SupabaseService {
       throw new Error('Supabase client not available');
     }
 
-    // Create stocktake session
-    const stocktakeId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
-    
+    // Create stocktake session. Do NOT pass `id` — `stocktakes.id` is a uuid
+    // column with `gen_random_uuid()` default. Passing a non-UUID fails RLS
+    // with `invalid input syntax for type uuid`.
     const { data: stocktakeData, error: stocktakeError } = await supabase
       .from('stocktakes')
       .insert({
-        id: stocktakeId,
         user_id: user.id,
         date: new Date().toISOString(),
         status: 'completed',
@@ -398,8 +397,9 @@ export class SupabaseService {
       .single();
 
     if (stocktakeError) {
-      console.error('Error creating stocktake:', stocktakeError);
-      throw new Error('Failed to create stocktake');
+      console.error('Error creating stocktake:', JSON.stringify(stocktakeError, null, 2));
+      const detail = stocktakeError.message || stocktakeError.details || stocktakeError.hint || 'Unknown database error';
+      throw new Error(`Failed to create stocktake: ${detail}`);
     }
 
     // Create stocktake items
@@ -418,8 +418,48 @@ export class SupabaseService {
       .insert(items);
 
     if (itemsError) {
-      console.error('Error creating stocktake items:', itemsError);
-      throw new Error('Failed to create stocktake items');
+      console.error('Error creating stocktake items:', JSON.stringify(itemsError, null, 2));
+      const detail = itemsError.message || itemsError.details || itemsError.hint || 'Unknown database error';
+      throw new Error(`Failed to create stocktake items: ${detail}`);
+    }
+  }
+
+  /**
+   * Deletes a purchase order and its linked order_items (via FK cascade).
+   * Scoped by user_id so RLS rejects cross-user deletions.
+   */
+  static async deletePurchaseOrder(purchaseOrderId: string): Promise<void> {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase is not configured');
+    }
+
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
+    // order_items has `on delete cascade` against purchase_orders, so a single
+    // delete here removes both. We also defensively delete order_items first
+    // in case the FK cascade is missing on older databases.
+    await supabase
+      .from('order_items')
+      .delete()
+      .eq('purchase_order_id', purchaseOrderId);
+
+    const { error } = await supabase
+      .from('purchase_orders')
+      .delete()
+      .eq('id', purchaseOrderId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('Error deleting purchase order:', JSON.stringify(error, null, 2));
+      const detail = error.message || error.details || error.hint || 'Unknown database error';
+      throw new Error(`Failed to delete purchase order: ${detail}`);
     }
   }
 

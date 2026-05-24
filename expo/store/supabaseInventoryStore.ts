@@ -68,6 +68,7 @@ interface SupabaseInventoryState {
   updateOrderItemQuantity: (productId: string, quantity: number) => void;
   removeFromOrder: (productId: string) => void;
   submitOrder: () => Promise<void>;
+  deletePurchaseOrder: (purchaseOrderId: string) => Promise<void>;
   
   // Stocktake Management
   addToStocktake: (product: Product, quantity: number) => void;
@@ -335,6 +336,17 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
       removeFromOrder: (productId) => set((state) => ({
         currentOrderItems: state.currentOrderItems.filter(item => item.productId !== productId)
       })),
+
+      deletePurchaseOrder: async (purchaseOrderId) => {
+        const state = get();
+        if (state.isSupabaseEnabled && state.isAuthenticated) {
+          await SupabaseService.deletePurchaseOrder(purchaseOrderId);
+        }
+        set((s) => ({
+          purchaseOrders: s.purchaseOrders.filter((o) => o.id !== purchaseOrderId),
+          lastSyncTime: new Date().toISOString(),
+        }));
+      },
 
       submitOrder: async () => {
         const state = get();

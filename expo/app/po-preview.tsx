@@ -1,16 +1,18 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, FileText, Mail, Eye } from 'lucide-react-native';
+import { ArrowLeft, FileText, Mail, Eye, Printer, Trash2 } from 'lucide-react-native';
+import * as Print from 'expo-print';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { formatDate } from '@/utils/dateUtils';
 import { sendPurchaseOrderEmail, previewPurchaseOrderPDF } from '@/services/emailService';
+import { generatePurchaseOrderPDF, POData } from '@/services/pdfService';
 
 export default function POPreviewScreen() {
   const router = useRouter();
   const { colors } = useThemeStore();
-  const { purchaseOrders, suppliers } = useInventoryStore();
+  const { purchaseOrders, suppliers, deletePurchaseOrder } = useInventoryStore();
   const isMountedRef = useRef(true);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
@@ -163,6 +165,83 @@ export default function POPreviewScreen() {
     }
   }, [isProcessing]);
 
+  /**
+   * Print PO using the same generated PDF. On native we hand the HTML to
+   * expo-print which opens the system print dialog (AirPrint / Android print
+   * service). On web we open the printable HTML in a new tab and trigger the
+   * browser's print dialog, mirroring the QR labels print flow.
+   */
+  const handlePrintPO = useCallback(async (purchaseOrder: any) => {
+    if (!isMountedRef.current || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const poData: POData = {
+        id: purchaseOrder.id,
+        supplierName: purchaseOrder.supplierName,
+        supplierEmail: purchaseOrder.supplierEmail,
+        date: purchaseOrder.date,
+        items: purchaseOrder.items,
+        status: purchaseOrder.status,
+      };
+
+      if (Platform.OS === 'web') {
+        const url = await generatePurchaseOrderPDF(poData);
+        const w = window.open(url, '_blank');
+        if (w) {
+          // Give the new tab a moment to render before invoking print.
+          setTimeout(() => {
+            try { w.print(); } catch (e) { console.log('print() failed', e); }
+          }, 500);
+        }
+      } else {
+        // expo-print's printAsync accepts a file URI — generate the PDF then
+        // hand it to the native print dialog (AirPrint / Android print).
+        const pdfUri = await generatePurchaseOrderPDF(poData);
+        await Print.printAsync({ uri: pdfUri });
+      }
+    } catch (error) {
+      console.error('Error printing PO:', error);
+      if (isMountedRef.current) {
+        Alert.alert('Print Error', 'Failed to print purchase order. Please try again.');
+      }
+    } finally {
+      if (isMountedRef.current) setIsProcessing(false);
+    }
+  }, [isProcessing]);
+
+  const handleDeletePO = useCallback((purchaseOrder: any) => {
+    if (!isMountedRef.current || isProcessing) return;
+    const poNumber = `PO-${String(purchaseOrder.id).slice(-4).padStart(4, '0')}`;
+    Alert.alert(
+      'Delete Purchase Order',
+      `Are you sure you want to delete ${poNumber} for ${purchaseOrder.supplierName}? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsProcessing(true);
+            try {
+              await deletePurchaseOrder(purchaseOrder.id);
+              if (isMountedRef.current) {
+                Alert.alert('Deleted', `${poNumber} has been deleted.`);
+              }
+            } catch (error) {
+              const msg = error instanceof Error ? error.message : 'Failed to delete purchase order';
+              console.error('Error deleting PO:', error);
+              if (isMountedRef.current) {
+                Alert.alert('Delete Failed', msg);
+              }
+            } finally {
+              if (isMountedRef.current) setIsProcessing(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [deletePurchaseOrder, isProcessing]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -235,35 +314,59 @@ export default function POPreviewScreen() {
                   Total Items: {order.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}
                 </Text>
                 
-                <View style={styles.buttonRow}>
-                  <TouchableOpacity 
-                    style={[styles.previewButton, { 
+                <View style={styles.buttonGrid}>
+                  <TouchableOpacity
+                    style={[styles.actionButton, {
                       borderColor: colors.primary,
-                      opacity: isProcessing ? 0.6 : 1
+                      opacity: isProcessing ? 0.6 : 1,
                     }]}
                     onPress={() => handlePreviewPDF(order)}
                     disabled={isProcessing}
                   >
                     <Eye size={18} color={colors.primary} />
-                    <Text style={[styles.previewButtonText, { color: colors.primary }]}>
-                      {isProcessing ? 'Processing...' : 'Preview PDF'}
-                    </Text>
+                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>View PDF</Text>
                   </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[styles.sendButton, { 
+
+                  <TouchableOpacity
+                    style={[styles.actionButton, {
+                      borderColor: colors.primary,
+                      opacity: isProcessing ? 0.6 : 1,
+                    }]}
+                    onPress={() => handlePrintPO(order)}
+                    disabled={isProcessing}
+                  >
+                    <Printer size={18} color={colors.primary} />
+                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>Print</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionButtonFilled, {
                       backgroundColor: colors.primary,
-                      opacity: isProcessing ? 0.6 : 1
+                      opacity: isProcessing ? 0.6 : 1,
                     }]}
                     onPress={() => handleSendPO(order)}
                     disabled={isProcessing}
                   >
-                    <Mail size={20} color={colors.background} />
-                    <Text style={[styles.sendButtonText, { color: colors.background }]}>
-                      {isProcessing ? 'Processing...' : 'Send PO'}
-                    </Text>
+                    <Mail size={18} color={colors.background} />
+                    <Text style={[styles.actionButtonText, { color: colors.background }]}>Email</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionButton, {
+                      borderColor: colors.error || '#d93025',
+                      opacity: isProcessing ? 0.6 : 1,
+                    }]}
+                    onPress={() => handleDeletePO(order)}
+                    disabled={isProcessing}
+                  >
+                    <Trash2 size={18} color={colors.error || '#d93025'} />
+                    <Text style={[styles.actionButtonText, { color: colors.error || '#d93025' }]}>Delete</Text>
                   </TouchableOpacity>
                 </View>
+
+                <Text style={[styles.senderNotice, { color: colors.inactive }]}>
+                  PO emails will be sent from your device&apos;s default mail app/account.
+                </Text>
               </View>
             </View>
           ))}
@@ -370,36 +473,42 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 12,
   },
-  buttonRow: {
+  buttonGrid: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  previewButton: {
-    flex: 1,
+  actionButton: {
+    flexBasis: '48%',
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: 8,
     borderWidth: 1,
   },
-  previewButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  sendButton: {
-    flex: 1,
+  actionButtonFilled: {
+    flexBasis: '48%',
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: 8,
   },
-  sendButtonText: {
-    fontSize: 14,
+  actionButtonText: {
+    fontSize: 13,
     fontWeight: '600',
     marginLeft: 6,
+  },
+  senderNotice: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 10,
+    textAlign: 'center',
   },
   emptyState: {
     flex: 1,

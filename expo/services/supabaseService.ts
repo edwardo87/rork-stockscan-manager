@@ -231,11 +231,12 @@ export class SupabaseService {
       throw new Error('Supabase client not available');
     }
 
-    // Create purchase order
+    // Create purchase order. We do NOT pass `id` — Supabase generates a UUID,
+    // because purchase_orders.id is a `uuid` column and the app's locally-generated
+    // ids (Date.now()+random) are not valid UUIDs.
     const { data: orderData, error: orderError } = await supabase
       .from('purchase_orders')
       .insert({
-        id: order.id,
         user_id: user.id,
         supplier_id: order.supplierId,
         supplier_name: order.supplierName,
@@ -247,8 +248,9 @@ export class SupabaseService {
       .single();
 
     if (orderError) {
-      console.error('Error creating purchase order:', orderError);
-      throw new Error('Failed to create purchase order');
+      console.error('Error creating purchase order:', JSON.stringify(orderError, null, 2));
+      const detail = orderError.message || orderError.details || orderError.hint || 'Unknown database error';
+      throw new Error(`Failed to create purchase order: ${detail}`);
     }
 
     // Create order items
@@ -266,8 +268,9 @@ export class SupabaseService {
       .insert(orderItems);
 
     if (itemsError) {
-      console.error('Error creating order items:', itemsError);
-      throw new Error('Failed to create order items');
+      console.error('Error creating order items:', JSON.stringify(itemsError, null, 2));
+      const detail = itemsError.message || itemsError.details || itemsError.hint || 'Unknown database error';
+      throw new Error(`Failed to create order items: ${detail}`);
     }
 
     // Log reorder entries
@@ -285,7 +288,7 @@ export class SupabaseService {
       .insert(reorderEntries);
 
     if (reorderError) {
-      console.error('Error creating reorder log entries:', reorderError);
+      console.error('Error creating reorder log entries:', JSON.stringify(reorderError, null, 2));
       // Don't throw error for reorder log as it's not critical
     }
   }

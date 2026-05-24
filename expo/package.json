@@ -48,6 +48,7 @@
     "google-auth-library": "^9.15.1",
     "googleapis": "^150.0.1",
     "hono": "^4.7.11",
+    "jspdf": "^4.2.1",
     "lucide-react-native": "^0.475.0",
     "pdf-lib": "^1.17.1",
     "react": "19.1.0",

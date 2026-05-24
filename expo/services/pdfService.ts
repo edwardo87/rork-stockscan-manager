@@ -3,14 +3,17 @@ import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
 import { formatDate } from '@/utils/dateUtils';
 
-// jsPDF depends on browser globals (window, btoa, etc.) and will throw at
-// import time inside Expo Go on iOS/Android. Load it lazily on web only.
-type JsPDFType = typeof import('jspdf').jsPDF;
-let _JsPDF: JsPDFType | null = null;
-async function getJsPDF(): Promise<JsPDFType> {
+// jsPDF depends on browser globals (window, btoa, etc.) and Metro can't
+// resolve it inside Expo Go on iOS/Android. The loader is split into
+// `jspdfLoader.ts` (native stub) and `jspdfLoader.web.ts` (real import) so
+// the native bundle never references the jspdf module at all.
+import { loadJsPDF } from './jspdfLoader';
+
+type JsPDFCtor = new (...args: any[]) => any;
+let _JsPDF: JsPDFCtor | null = null;
+async function getJsPDF(): Promise<JsPDFCtor> {
   if (_JsPDF) return _JsPDF;
-  const mod = await import('jspdf');
-  _JsPDF = mod.jsPDF;
+  _JsPDF = (await loadJsPDF()) as JsPDFCtor;
   return _JsPDF;
 }
 
@@ -127,7 +130,7 @@ function generatePurchaseOrderHTML(poData: POData): string {
  * `.pdf`, which was the previous bug causing recipients to see corrupted
  * attachments.
  */
-async function buildPdfWithJsPdf(poData: POData): Promise<InstanceType<JsPDFType>> {
+async function buildPdfWithJsPdf(poData: POData): Promise<any> {
   const JsPDF = await getJsPDF();
   const poNumber = getPoNumber(poData.id);
   const orderDate = formatDate(new Date(poData.date));

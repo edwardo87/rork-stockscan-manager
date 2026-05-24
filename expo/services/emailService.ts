@@ -1,8 +1,48 @@
 import { Linking, Alert, Platform } from 'react-native';
 import * as MailComposer from 'expo-mail-composer';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import { PurchaseOrder } from '@/types/inventory';
 import { generatePurchaseOrderPDF, POData } from './pdfService';
+
+/**
+ * Copies the freshly-generated PDF from expo-print's cache location to a stable
+ * path inside documentDirectory with an explicit `.pdf` filename. Some mail
+ * clients (notably Gmail/Outlook on Android) attach by reading the file at the
+ * provided URI at send-time; if the cache file has been evicted or the
+ * filename lacks a `.pdf` extension the attachment is delivered with the wrong
+ * MIME type and appears corrupted to the recipient.
+ *
+ * Returns the new file URI (file://) that exists on disk with size > 0.
+ */
+async function preparePdfForAttachment(
+  sourceUri: string,
+  poNumber: string,
+  supplierName: string
+): Promise<string> {
+  const safeSupplier = supplierName.replace(/[^a-zA-Z0-9]/g, '_');
+  const fileName = `${poNumber}_${safeSupplier}.pdf`;
+  const destDir = (FileSystem as any).documentDirectory ?? (FileSystem as any).cacheDirectory;
+  if (!destDir) {
+    console.log('[PO email] no documentDirectory available, using source URI as-is');
+    return sourceUri;
+  }
+  const destUri = `${destDir}${fileName}`;
+
+  try {
+    // Remove any stale copy from a previous send so we never attach an old file.
+    const existing = await FileSystem.getInfoAsync(destUri);
+    if (existing.exists) {
+      await FileSystem.deleteAsync(destUri, { idempotent: true });
+    }
+    await FileSystem.copyAsync({ from: sourceUri, to: destUri });
+  } catch (e) {
+    console.log('[PO email] copy to documentDirectory failed, falling back to source URI', e);
+    return sourceUri;
+  }
+
+  return destUri;
+}
 
 /**
  * Formats a purchase order into email content
@@ -71,19 +111,40 @@ export async function sendPurchaseOrderEmail(
     const isMailAvailable = await MailComposer.isAvailableAsync();
     
     if (isMailAvailable && Platform.OS !== 'web') {
-      // Generate PDF file for mobile
-      const pdfUri = await generatePurchaseOrderPDF(poData);
-      
+      // Generate PDF file for mobile — this is the SAME pipeline used by
+      // "View PDF" so we know the file itself opens cleanly. We then copy it
+      // to documentDirectory with a stable .pdf filename so mail clients
+      // attach the right bytes with the right MIME type.
+      const generatedUri = await generatePurchaseOrderPDF(poData);
+      console.log('[PO email] generated PDF URI:', generatedUri);
+
+      const generatedInfo = await FileSystem.getInfoAsync(generatedUri);
+      console.log('[PO email] generated PDF exists:', generatedInfo.exists, 'size:', (generatedInfo as any).size);
+      if (!generatedInfo.exists || !(generatedInfo as any).size) {
+        throw new Error('Generated PDF is missing or empty');
+      }
+
+      const attachmentUri = await preparePdfForAttachment(
+        generatedUri,
+        poNumber,
+        purchaseOrder.supplierName
+      );
+      const attachmentInfo = await FileSystem.getInfoAsync(attachmentUri);
+      console.log('[PO email] attachment URI:', attachmentUri, 'exists:', attachmentInfo.exists, 'size:', (attachmentInfo as any).size);
+      if (!attachmentInfo.exists || !(attachmentInfo as any).size) {
+        throw new Error('Prepared attachment is missing or empty');
+      }
+
       const emailOptions: MailComposer.MailComposerOptions = {
         recipients: supplierEmail ? [supplierEmail] : [],
         subject,
         body,
-        attachments: [pdfUri]
+        attachments: [attachmentUri],
       };
-      
+
       const result = await MailComposer.composeAsync(emailOptions);
       return result.status === MailComposer.MailComposerStatus.SENT;
-      
+
     } else if (Platform.OS === 'web') {
       // For web, generate PDF and offer download/share
       const pdfUri = await generatePurchaseOrderPDF(poData);

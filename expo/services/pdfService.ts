@@ -1,8 +1,18 @@
 import { Platform } from 'react-native';
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
-import { jsPDF } from 'jspdf';
 import { formatDate } from '@/utils/dateUtils';
+
+// jsPDF depends on browser globals (window, btoa, etc.) and will throw at
+// import time inside Expo Go on iOS/Android. Load it lazily on web only.
+type JsPDFType = typeof import('jspdf').jsPDF;
+let _JsPDF: JsPDFType | null = null;
+async function getJsPDF(): Promise<JsPDFType> {
+  if (_JsPDF) return _JsPDF;
+  const mod = await import('jspdf');
+  _JsPDF = mod.jsPDF;
+  return _JsPDF;
+}
 
 export interface POData {
   id: string;
@@ -117,12 +127,13 @@ function generatePurchaseOrderHTML(poData: POData): string {
  * `.pdf`, which was the previous bug causing recipients to see corrupted
  * attachments.
  */
-function buildPdfWithJsPdf(poData: POData): jsPDF {
+async function buildPdfWithJsPdf(poData: POData): Promise<InstanceType<JsPDFType>> {
+  const JsPDF = await getJsPDF();
   const poNumber = getPoNumber(poData.id);
   const orderDate = formatDate(new Date(poData.date));
   const totalItems = poData.items.reduce((sum, item) => sum + item.quantity, 0);
 
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const doc = new JsPDF({ unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 40;
@@ -283,7 +294,7 @@ async function verifyPdfHeaderNative(uri: string): Promise<boolean> {
 export async function generatePurchaseOrderPDF(poData: POData): Promise<string> {
   try {
     if (Platform.OS === 'web') {
-      const doc = buildPdfWithJsPdf(poData);
+      const doc = await buildPdfWithJsPdf(poData);
       const blob = doc.output('blob');
       const url = URL.createObjectURL(blob);
       console.log('[PDF generate web] blob size:', blob.size, 'type:', blob.type, 'url:', url);
@@ -310,7 +321,7 @@ export async function generatePurchaseOrderPDF(poData: POData): Promise<string> 
 export async function generateBase64PDF(poData: POData): Promise<string> {
   try {
     if (Platform.OS === 'web') {
-      const doc = buildPdfWithJsPdf(poData);
+      const doc = await buildPdfWithJsPdf(poData);
       // jsPDF outputs base64 of the real PDF.
       const dataUri = doc.output('datauristring');
       const base64 = dataUri.split(',')[1] || '';

@@ -1,7 +1,7 @@
 import { Linking, Alert, Platform } from 'react-native';
 import * as MailComposer from 'expo-mail-composer';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { PurchaseOrder } from '@/types/inventory';
 import { generatePurchaseOrderPDF, POData } from './pdfService';
 

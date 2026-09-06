@@ -19,6 +19,7 @@ forward from later chapters and do not expand a chapter's scope while implementi
 ### Chapter status
 
 - **Chapter 1 — Trustworthy ordering foundation: implemented.**
+  Platform note: the project was upgraded Expo SDK 54 → 55 → 57 (separate technical task, Sept 2026, no source-code changes) so Chapter 1 can now be verified on a physical iPhone running the current Expo Go. Device verification is the remaining Chapter 1 step.
   Approved reconciled scope (v2):
   - [x] Stop PO submission from increasing physical stock (stock is corrected only via stocktake).
   - [x] Real Order History built from existing `purchase_orders`/`order_items` records, newest first, outside Developer Tools entries; existing PO Preview evolved in place, PDF/print/email/delete preserved.

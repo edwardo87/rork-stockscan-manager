@@ -17,6 +17,28 @@ interface AuthScreenProps {
   onAuthSuccess: () => void;
 }
 
+/**
+ * Maps raw auth failures to plain-English messages. Network-level errors
+ * (DNS failure, paused/unreachable Supabase project) surface as opaque
+ * "Failed to fetch" TypeErrors — give the user something actionable instead.
+ */
+function getAuthErrorMessage(error: any): string {
+  const message: string = error?.message ?? 'Something went wrong. Please try again.';
+  const isNetworkError =
+    (error instanceof TypeError && message.includes('Failed to fetch')) ||
+    message.includes('Network request failed') ||
+    message.includes('fetch failed');
+
+  if (isNetworkError) {
+    return (
+      'Cannot reach the SmartStock server. Check your internet connection. ' +
+      'If the problem persists, the Supabase project may be paused — restore it ' +
+      'at supabase.com/dashboard.'
+    );
+  }
+  return message;
+}
+
 export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -39,6 +61,14 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
 
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+
+    if (!supabase) {
+      Alert.alert(
+        'Error',
+        'Supabase is not configured. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.'
+      );
       return;
     }
 
@@ -72,7 +102,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         onAuthSuccess();
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', getAuthErrorMessage(error));
     } finally {
       setLoading(false);
     }

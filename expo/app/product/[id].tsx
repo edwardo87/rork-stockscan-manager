@@ -6,7 +6,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import QuantityInput from '@/components/QuantityInput';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const QRCodeComponent = ({ value, size = 200, colors }: { value: string; size?: number; colors: any }) => {
   // Use external QR code service for both web and mobile for better compatibility

@@ -12,6 +12,7 @@ import { useSupabaseInventoryStore } from './supabaseInventoryStore';
 
 const noop = (): void => {};
 const noopAsync = async (): Promise<void> => {};
+const noopSetGoogleSheetsEnabled = (_enabled: boolean): void => {};
 
 export const useInventoryStore = () => {
   const store = useSupabaseInventoryStore();
@@ -21,7 +22,7 @@ export const useInventoryStore = () => {
     isGoogleSheetsEnabled: false as const,
     initializeGoogleSheets: noopAsync,
     syncWithGoogleSheets: noopAsync,
-    setGoogleSheetsEnabled: noop,
+    setGoogleSheetsEnabled: noopSetGoogleSheetsEnabled,
     loadProductsFromSheets: noopAsync,
   };
 };

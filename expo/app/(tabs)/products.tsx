@@ -9,7 +9,7 @@ import EmptyState from '@/components/EmptyState';
 import * as DocumentPicker from 'expo-document-picker';
 import { parseCSVWithSummary, validateCSVFormat, generateCSVTemplate } from '@/services/csvImportService';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export default function ProductsScreen() {
   const router = useRouter();

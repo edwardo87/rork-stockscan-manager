@@ -34,6 +34,20 @@ function deriveSuppliersFromProducts(products: Product[]): Supplier[] {
 import { SupabaseService } from '@/services/supabaseService';
 import { supabase, getCurrentUser, isSupabaseConfigured, signOut as signOutFromSupabase } from '@/lib/supabase';
 
+/**
+ * Detects Supabase JWT clock-skew errors (PGRST303 "JWT issued at future").
+ * Happens when a session token was issued while the auth server clock was
+ * offset — e.g. right after a project pause/restore. The token stays invalid
+ * until re-authentication, so the app signs the user out with a clear message.
+ */
+const isStaleTokenError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return message.includes('JWT issued at future') || message.includes('PGRST303');
+};
+
+const STALE_TOKEN_MESSAGE =
+  'Your session is out of sync with the server. Please sign in again.';
+
 interface SupabaseInventoryState {
   products: Product[];
   suppliers: Supplier[];
@@ -170,9 +184,14 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
             lastSyncTime: new Date().toISOString()
           });
         } catch (error) {
+          console.error('Error loading products:', error);
+          if (isStaleTokenError(error)) {
+            set({ error: STALE_TOKEN_MESSAGE, isLoading: false });
+            await get().signOut();
+            return;
+          }
           const errorMessage = error instanceof Error ? error.message : 'Failed to load products';
           set({ error: errorMessage, isLoading: false });
-          console.error('Error loading products:', error);
         }
       },
       
@@ -294,8 +313,13 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
             lastSyncTime: new Date().toISOString(),
           });
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Failed to load purchase orders';
           console.error('Error loading purchase orders:', error);
+          if (isStaleTokenError(error)) {
+            set({ error: STALE_TOKEN_MESSAGE });
+            await get().signOut();
+            return;
+          }
+          const errorMessage = error instanceof Error ? error.message : 'Failed to load purchase orders';
           set({ error: errorMessage });
         }
       },

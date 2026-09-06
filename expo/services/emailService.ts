@@ -3,7 +3,7 @@ import * as MailComposer from 'expo-mail-composer';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { PurchaseOrder } from '@/types/inventory';
-import { generatePurchaseOrderPDF, POData } from './pdfService';
+import { generatePurchaseOrderPDF, POData, getPoNumber } from './pdfService';
 
 /**
  * Copies the PDF returned by expo-print (which lives in the cache dir with a
@@ -44,7 +44,7 @@ export function formatPurchaseOrderEmail(purchaseOrder: PurchaseOrder): {
   body: string;
 } {
   const { supplierName, date, items, id } = purchaseOrder;
-  const poNumber = `PO-${String(id).slice(-4).padStart(4, '0')}`;
+  const poNumber = getPoNumber(id);
   const formattedDate = new Date(date).toLocaleDateString();
   const subject = `Purchase Order ${poNumber} - ${supplierName}`;
   const itemsTable = items
@@ -97,7 +97,7 @@ export async function sendPurchaseOrderEmail(
       status: purchaseOrder.status,
     };
 
-    const poNumber = `PO-${String(purchaseOrder.id).slice(-4).padStart(4, '0')}`;
+    const poNumber = getPoNumber(purchaseOrder.id);
     const subject = `Purchase Order ${poNumber} - ${purchaseOrder.supplierName}`;
     const body = 'Please see attached purchase order. Due ASAP. Thank you.';
 
@@ -236,7 +236,7 @@ export async function previewPurchaseOrderPDF(purchaseOrder: PurchaseOrder): Pro
       await Sharing.shareAsync(pdfUri, {
         mimeType: 'application/pdf',
         UTI: 'com.adobe.pdf',
-        dialogTitle: `Preview Purchase Order PO-${String(purchaseOrder.id).slice(-4).padStart(4, '0')}`,
+        dialogTitle: `Preview Purchase Order ${getPoNumber(purchaseOrder.id)}`,
       });
     } else {
       Alert.alert('Preview Unavailable', 'Sharing is not available on this device.');

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ScanBarcode, Send } from 'lucide-react-native';
+import { ScanBarcode, Send, ClipboardList } from 'lucide-react-native';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useThemeStore } from '@/store/themeStore';
 import Scanner from '@/components/Scanner';
@@ -98,10 +98,19 @@ export default function OrderScreen() {
             backgroundColor: colors.background,
             borderBottomColor: colors.border
           }]}>
-            <Text style={[styles.title, { color: colors.text }]}>Order Items</Text>
-            <Text style={[styles.subtitle, { color: colors.inactive }]}>
-              {currentOrderItems.length} {currentOrderItems.length === 1 ? 'item' : 'items'}
-            </Text>
+            <View style={styles.headerText}>
+              <Text style={[styles.title, { color: colors.text }]}>Order Items</Text>
+              <Text style={[styles.subtitle, { color: colors.inactive }]}>
+                {currentOrderItems.length} {currentOrderItems.length === 1 ? 'item' : 'items'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.historyButton}
+              onPress={() => router.push('/po-preview')}
+            >
+              <ClipboardList size={18} color={colors.primary} />
+              <Text style={[styles.historyButtonText, { color: colors.primary }]}>History</Text>
+            </TouchableOpacity>
           </View>
           
           {currentOrderItems.length > 0 ? (
@@ -160,8 +169,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 16,
     borderBottomWidth: 1,
+  },
+  headerText: {
+    flex: 1,
+  },
+  historyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  historyButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
   },
   title: {
     fontSize: 24,

@@ -66,7 +66,7 @@ export default function ProductsScreen() {
 
         Alert.alert(
           'Import Preview',
-          `Ready to import ${summary.imported} products. This will replace your current product list.${warningTail}`,
+          `Ready to import ${summary.imported} products. These will be added to your existing products — nothing is replaced. Importing the same file again will create duplicate products.${warningTail}`,
           [
             { text: 'Cancel', style: 'cancel' },
             {

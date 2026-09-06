@@ -72,8 +72,8 @@ name,description,sku,barcode,category,supplier,supplier_email,cost,price,current
             4. Confirm the import when prompted
           </Text>
           <Text style={[styles.note, { color: colors.warning }]}>
-            Note: Importing will replace all existing product data in the app.
-            Make sure to back up any existing data if needed.
+            Note: Importing adds products to your existing list — nothing is replaced.
+            Importing the same file more than once will create duplicate products.
           </Text>
         </View>
       </ScrollView>

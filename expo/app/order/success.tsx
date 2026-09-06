@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { CheckCircle, Home } from 'lucide-react-native';
+import { CheckCircle, Home, ClipboardList } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 
 
@@ -21,16 +21,23 @@ export default function OrderSuccessScreen() {
         <Text style={[styles.title, { color: colors.text }]}>Order Submitted!</Text>
         
         <Text style={[styles.message, { color: colors.inactive }]}>
-          Your purchase order has been successfully submitted to your suppliers.
-          You can track the status of your orders in the order history.
+          Your purchase orders have been created and saved to your order history.
         </Text>
         
         <TouchableOpacity 
           style={[styles.button, { backgroundColor: colors.primary }]}
+          onPress={() => router.push('/po-preview')}
+        >
+          <ClipboardList size={20} color={colors.background} />
+          <Text style={[styles.buttonText, { color: colors.background }]}>View Order History</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
           onPress={() => router.replace('/')}
         >
-          <Home size={20} color={colors.background} />
-          <Text style={[styles.buttonText, { color: colors.background }]}>Back to Home</Text>
+          <Home size={20} color={colors.text} />
+          <Text style={[styles.buttonText, { color: colors.text }]}>Back to Home</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -82,6 +89,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  secondaryButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    marginTop: 12,
   },
 
 });

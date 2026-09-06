@@ -7,7 +7,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { formatDate } from '@/utils/dateUtils';
 import { sendPurchaseOrderEmail, previewPurchaseOrderPDF } from '@/services/emailService';
-import { generatePurchaseOrderPDF, POData } from '@/services/pdfService';
+import { generatePurchaseOrderPDF, POData, getPoNumber } from '@/services/pdfService';
 
 export default function POPreviewScreen() {
   const router = useRouter();
@@ -22,8 +22,12 @@ export default function POPreviewScreen() {
     };
   }, []);
 
-  // Get the most recent orders (all from the last submission)
-  const latestOrders = purchaseOrders.slice(-5); // Show last 5 orders or adjust as needed
+  // Order History: every stored purchase order, newest first.
+  // Built from the existing purchase_orders + order_items records loaded by
+  // the store — no parallel history system.
+  const sortedOrders = [...purchaseOrders].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
 
   const handleSendPO = useCallback(async (purchaseOrder: any) => {
     if (!isMountedRef.current || isProcessing) return;
@@ -211,7 +215,7 @@ export default function POPreviewScreen() {
 
   const handleDeletePO = useCallback((purchaseOrder: any) => {
     if (!isMountedRef.current || isProcessing) return;
-    const poNumber = `PO-${String(purchaseOrder.id).slice(-4).padStart(4, '0')}`;
+    const poNumber = getPoNumber(purchaseOrder.id);
     Alert.alert(
       'Delete Purchase Order',
       `Are you sure you want to delete ${poNumber} for ${purchaseOrder.supplierName}? This cannot be undone.`,
@@ -251,12 +255,12 @@ export default function POPreviewScreen() {
         >
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>PO Preview</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Order History</Text>
       </View>
 
-      {latestOrders.length > 0 ? (
+      {sortedOrders.length > 0 ? (
         <ScrollView style={styles.content}>
-          {latestOrders.map((order, index) => (
+          {sortedOrders.map((order, index) => (
             <View 
               key={order.id} 
               style={[styles.poContainer, { 
@@ -267,7 +271,7 @@ export default function POPreviewScreen() {
               <View style={styles.poHeader}>
                 <View>
                   <Text style={[styles.poNumber, { color: colors.text }]}>
-                    PO-{String(order.id).slice(-4).padStart(4, '0')}
+                    {getPoNumber(order.id)}
                   </Text>
                   <Text style={[styles.poSupplier, { color: colors.text }]}>
                     {order.supplierName}
@@ -378,7 +382,7 @@ export default function POPreviewScreen() {
             No Orders Available
           </Text>
           <Text style={[styles.emptyMessage, { color: colors.inactive }]}>
-            Please submit an order to view the PO preview.
+            No purchase orders yet. Orders you submit will appear here with their date, supplier and reference.
           </Text>
         </View>
       )}

@@ -18,7 +18,13 @@ export interface POData {
   status: string;
 }
 
-function getPoNumber(id: string): string {
+/**
+ * Derives the stable PO reference (PO-XXXX) from the purchase order's stored
+ * database id. This is the single shared derivation used by the PDF, the
+ * email flow and the Order History screen so the reference shown in history
+ * always exactly matches the reference on the generated/emailed PO.
+ */
+export function getPoNumber(id: string): string {
   return `PO-${String(id).slice(-4).padStart(4, '0')}`;
 }
 

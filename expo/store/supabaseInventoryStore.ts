@@ -416,30 +416,28 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
             }
           }
 
-          // Update product stock levels and last ordered date
-          const updatedProducts = state.products.map(product => {
-            const orderItem = state.currentOrderItems.find(item => item.productId === product.id);
-            if (orderItem) {
-              const updatedProduct = {
-                ...product,
-                lastOrdered: new Date().toISOString(),
-                currentStock: product.currentStock + orderItem.quantity
-              };
-              
-              // Update in Supabase if available
-              if (state.isSupabaseEnabled && state.isAuthenticated) {
-                SupabaseService.updateProduct(product.id, {
-                  lastOrdered: updatedProduct.lastOrdered,
-                  currentStock: updatedProduct.currentStock
-                }).catch(error => {
-                  console.error('Failed to update product in Supabase:', error);
-                });
-              }
-              
-              return updatedProduct;
+          // Stamp the last-ordered date only. Ordering does NOT change
+          // physical stock — goods have not arrived. Stock is corrected
+          // exclusively through stocktake (Decision Log: PO submission must
+          // not change physical stock).
+          const lastOrderedStamp = new Date().toISOString();
+          const orderedProductIds = new Set(state.currentOrderItems.map(item => item.productId));
+          const updatedProducts = state.products.map(product =>
+            orderedProductIds.has(product.id)
+              ? { ...product, lastOrdered: lastOrderedStamp }
+              : product
+          );
+
+          // Persist the stamp to Supabase. Deliberately no currentStock write.
+          if (state.isSupabaseEnabled && state.isAuthenticated) {
+            for (const productId of orderedProductIds) {
+              SupabaseService.updateProduct(productId, {
+                lastOrdered: lastOrderedStamp,
+              }).catch(error => {
+                console.error('Failed to update last-ordered date in Supabase:', error);
+              });
             }
-            return product;
-          });
+          }
 
           set({
             purchaseOrders: [...state.purchaseOrders, ...newOrders],

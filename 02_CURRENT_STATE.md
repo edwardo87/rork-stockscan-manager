@@ -78,6 +78,22 @@ This is the largest commercial barrier because it requires the customer to manua
 
 The most recent successful device test generated a genuine PDF purchase order and opened the mail application with that PDF attached and ready to send.
 
+## Open defect (8 October 2026): new-account stock retrieval error
+
+**Symptom.** During local physical-device testing (Windows PC → local Expo dev server → iPhone, Expo Go), a newly registered SmartStock account reached the app but encountered an error when attempting to retrieve stock. Existing accounts authenticate and load their stock records correctly on the same device and build. Root cause not yet confirmed.
+
+**Verified by code inspection (8 October 2026):**
+
+- A new account with zero products is handled cleanly by design: the products query returns an empty list and the Products tab shows the standard "No Products Found" empty state. An empty catalogue alone cannot produce an error, so the reported error indicates a genuine failure, not an empty-catalogue rendering problem.
+- On sign-in, the auth listener fires `loadProducts()` and `loadPurchaseOrders()` without awaiting them, and `SupabaseService.getProducts()` independently re-resolves the session. A session race on a brand-new login can throw `User not authenticated`, or the select can fail on a stale/offset token (PGRST303 clock skew — known to occur after the 4 October Supabase project pause/restore).
+- Diagnostic gap: the store's `error` field is set by `loadProducts`/`loadPurchaseOrders` but is not rendered by any screen, so retrieval failures are invisible in the UI. The exact user-visible message and the device console output (lines beginning `Error loading products:` / `Error fetching products:`) are required to confirm which failure occurred.
+
+**Status: OPEN — diagnosis in progress. No code, schema or data changes made.** Fix proposal pending review.
+
+## Chapter 1 device verification (8 October 2026)
+
+Local physical-device verification has partially completed: existing-account authentication, stock record loading, and data retention all verified on an iPhone. Remaining: full ordering round (scan → order → PDF → history), stocktake round, and stock-quantity integrity — blocked until the defect above is resolved.
+
 ## Immediate position
 
 Do not spend time converting all supplier price lists into the old CSV template. Do not build isolated optional features yet. The next work must align the product foundation and deliver complete customer outcomes in the Roadmap.

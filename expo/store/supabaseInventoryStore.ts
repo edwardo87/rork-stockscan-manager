@@ -581,14 +581,17 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           return null;
         }
         
-        // Set up auth state listener
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        // Set up auth state listener. Loads run sequentially and awaited so a
+        // brand-new session is fully established before the first queries —
+        // an unawaited parallel load could race the session and throw
+        // 'User not authenticated' (observed on new-account sign-up, Oct 2026).
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
           const user = session?.user || null;
           set({ user, isAuthenticated: !!user });
           
           if (event === 'SIGNED_IN' && user) {
-            get().loadProducts();
-            get().loadPurchaseOrders();
+            await get().loadProducts();
+            await get().loadPurchaseOrders();
           } else if (event === 'SIGNED_OUT') {
             set({ 
               products: [], 

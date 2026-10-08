@@ -17,7 +17,7 @@ export default function ProductsScreen() {
   const [showUploadOptions, setShowUploadOptions] = useState(false);
   const { colors } = useThemeStore();
   
-  const { products, importProductsFromCSV, isLoading } = useInventoryStore();
+  const { products, importProductsFromCSV, isLoading, error, setError } = useInventoryStore();
 
   const filteredProducts = products.filter(product => 
     product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -234,6 +234,18 @@ export default function ProductsScreen() {
         )}
       </View>
       
+      {error && (
+        <TouchableOpacity
+          style={[styles.errorBanner, { backgroundColor: colors.error }]}
+          onPress={() => setError(null)}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.errorBannerText, { color: colors.background }]} numberOfLines={3}>
+            {error}
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {filteredProducts.length > 0 ? (
         <FlatList
           data={filteredProducts}
@@ -302,6 +314,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 16,
     gap: 12,
+  },
+  errorBanner: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 8,
+  },
+  errorBannerText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   uploadButton: {
     flex: 1,

@@ -29,7 +29,15 @@ forward from later chapters and do not expand a chapter's scope while implementi
   - [x] Order success screen links to Order History with honest copy; Order tab gains a History entry point.
   - [x] False CSV "replace" message corrected (products import alert + CSV setup guide).
   - Deferred to Chapter 5 by the Roadmap: scan-time recent-order information (last order date/quantity/PO reference).
-- Chapter 2 — Business-neutral identity and suppliers: not started.
+- Chapter 2 — Business-neutral identity and suppliers: in progress (Stage 1 complete; database migration prepared, awaiting backup + execution approval).
+  Stage plan (each stage a separate verifiable step):
+  - [x] Stage 1 — Database safeguard package: `chapter2-migration.sql` (idempotent, additive: businesses + suppliers tables, business_id/supplier links, business-aware RLS that preserves legacy user access), `chapter2-rollback.sql` (restores exact pre-migration policies/schema), `chapter2-db-safeguards.md` (backup procedure + verification + migration sequence + data-mapping confirmation).
+  - [ ] Stage 2 — Owner runs verified backup, executes migration in Supabase SQL Editor, runs the migration's verification queries, and re-tests the app on the physical iPhone. **Blocked on: backup cannot be created or verified from the sandbox (no Supabase service credentials).**
+  - [ ] Stage 3 — Business profile: businesses table wiring, profile create/edit screen, store integration; new sign-ups get a business on first use.
+  - [ ] Stage 4 — Supplier records: suppliers CRUD, products linked to supplier records, PO grouping by supplier record (historical PO snapshots untouched).
+  - [ ] Stage 5 — De-hardcode Lifestyle Windows: PDF/email take business-profile details (pdfService.ts ×2, emailService.ts ×1).
+  - [ ] Stage 6 — Device verification of Chapter 2 acceptance; only then mark the chapter complete.
+  Chapter 1 follow-up fix (8 Oct 2026, small, schema-independent): auth-listener loads now awaited sequentially (removes the new-account session race) and the Products screen renders the store error banner (retrieval failures were previously invisible). PGRST303 clock-skew issue stays OPEN pending new-account verification on device.
 - Chapter 3 — Universal product and purchasing model: not started.
 - Chapter 4 — Supplier-document onboarding: not started.
 - Chapter 5 — Complete storeroom ordering experience: not started.

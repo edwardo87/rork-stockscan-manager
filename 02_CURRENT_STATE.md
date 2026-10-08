@@ -88,7 +88,7 @@ The most recent successful device test generated a genuine PDF purchase order an
 - On sign-in, the auth listener fires `loadProducts()` and `loadPurchaseOrders()` without awaiting them, and `SupabaseService.getProducts()` independently re-resolves the session. A session race on a brand-new login can throw `User not authenticated`, or the select can fail on a stale/offset token (PGRST303 clock skew — known to occur after the 4 October Supabase project pause/restore).
 - Diagnostic gap: the store's `error` field is set by `loadProducts`/`loadPurchaseOrders` but is not rendered by any screen, so retrieval failures are invisible in the UI. The exact user-visible message and the device console output (lines beginning `Error loading products:` / `Error fetching products:`) are required to confirm which failure occurred.
 
-**Status: OPEN — diagnosis in progress. No code, schema or data changes made.** Fix proposal pending review.
+**Status: OPEN — pending on-device verification with a new account.** The two schema-independent mitigations were implemented 8 October 2026 (auth-listener loads now awaited sequentially; Products screen renders the store error banner). No database schema or data changes. The PGRST303 clock-skew occurrence on the existing account self-recovered after sign-out/sign-in, consistent with the clock-skew diagnosis; the defect remains open until a fresh account completes retrieval without error.
 
 ## Chapter 1 device verification (8 October 2026)
 

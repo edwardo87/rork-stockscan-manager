@@ -1,6 +1,9 @@
 -- =============================================================================
 -- SmartStock — Chapter 2 Migration: Business ownership + Supplier records
--- SECURITY-HARDENED REVISION 2 (9 October 2026). Supersedes revision 1.
+-- SECURITY-HARDENED REVISION 3 (9 October 2026). Supersedes revision 2.
+-- Revision 3: claim_my_business() now also assigns the claiming user's
+-- still-unassigned records (business_id IS NULL) to the claimed business,
+-- atomically with the membership update.
 -- =============================================================================
 -- Run in: Supabase Dashboard → SQL Editor → paste this file → Run.
 --
@@ -26,6 +29,10 @@
 --         users can never perform) and re-enables it immediately after.
 --       - claim_my_business() is the only API path to establish membership,
 --         and only into a business the caller created (businesses.created_by).
+--         A successful first-time claim ALSO assigns that user's existing
+--         business_id-NULL records (products / purchase_orders / stocktakes /
+--         reorder_log) to the claimed business — atomically, touching no
+--         other column and no row already assigned to any business.
 --   • BUSINESS OWNERSHIP OF NEW RECORDS IS DATABASE-ENFORCED:
 --       - BEFORE INSERT triggers on products, purchase_orders, stocktakes
 --         and reorder_log populate business_id from the inserting user's
@@ -361,6 +368,9 @@ where u.id = po.user_id
 --   • member user, business_id provided → must equal their own business.
 --   • pre-claim user (no business yet)  → stays null (legacy compatible);
 --     they cannot attach rows to ANY business until they claim one.
+-- When a pre-claim user later runs claim_my_business() (section 9), all of
+-- their business_id-null records are backfilled to the claimed business
+-- atomically — see the function body.
 -- RLS WITH CHECK (section 11) then re-validates the final row, so the
 -- trigger and the policy agree. Bypass only for an explicit service_role
 -- JWT (trusted backend); claim-less direct SQL sessions that try to set a
@@ -446,6 +456,14 @@ begin
   end if;
 
   -- Cannot switch membership: only fills a NULL business_id.
+  -- NOTE on the guard trigger (CORRECTION 3 / review follow-up): this UPDATE
+  -- fires trg_users_membership_guard normally, even though this function is
+  -- SECURITY DEFINER (triggers always fire; definer only changes privileges).
+  -- It passes legitimately: the caller is authenticated (NOT service_role),
+  -- old.business_id IS null (first-time claim), and the guard's own check
+  -- re-verifies businesses.created_by = auth.uid() — the same condition the
+  -- lookup above enforced. auth.uid() inside the function still resolves from
+  -- the caller's JWT, so the guard validates the REAL caller, not the definer.
   update public.users u
   set business_id = v_bid
   where u.id = v_uid and u.business_id is null;
@@ -453,6 +471,40 @@ begin
   if not found then
     raise exception 'SmartStock: this account already has a business.';
   end if;
+
+  -- CORRECTION 3 (review follow-up): first-time-claim record backfill.
+  -- Assign the user's still-unassigned records to the newly claimed business.
+  -- Guarantees:
+  --   • only rows OWNED by the authenticated user (user_id = caller);
+  --   • only rows where business_id IS NULL — rows already assigned to ANY
+  --     business (own or another) are never touched;
+  --   • ONLY the business_id column changes — stock quantities, order
+  --     details, supplier_name / supplier_email snapshots and every other
+  --     column are left exactly as they are.
+  -- Runs in the SAME transaction as the membership update above (PostgREST
+  -- wraps the RPC call in a transaction): if any statement fails, the whole
+  -- claim — membership AND backfill — rolls back together, leaving no partial
+  -- changes. SECURITY DEFINER (owner) execution means RLS does not silently
+  -- filter these UPDATEs mid-claim; the user_id filter is the scope.
+  update public.products p
+     set business_id = v_bid
+   where p.user_id = v_uid
+     and p.business_id is null;
+
+  update public.purchase_orders po
+     set business_id = v_bid
+   where po.user_id = v_uid
+     and po.business_id is null;
+
+  update public.stocktakes st
+     set business_id = v_bid
+   where st.user_id = v_uid
+     and st.business_id is null;
+
+  update public.reorder_log rl
+     set business_id = v_bid
+   where rl.user_id = v_uid
+     and rl.business_id is null;
 
   return v_bid;
 end;

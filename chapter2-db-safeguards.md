@@ -1,6 +1,6 @@
 # SmartStock — Chapter 2 Database Safeguards
 
-Status: prepared 8 October 2026; security-hardened revision 9 October 2026; **revision 2 corrections 9 October 2026** (rollback gate table-specificity, explicit service_role trust boundary, DB-enforced business ownership of new records, composite supplier FKs, role-switching test procedure, honest backup guidance). **The migration has NOT been executed.**
+Status: prepared 8 October 2026; security-hardened revision 9 October 2026; revision 2 corrections 9 October 2026 (rollback gate table-specificity, explicit service_role trust boundary, DB-enforced business ownership of new records, composite supplier FKs, role-switching test procedure, honest backup guidance); **revision 3, 9 October 2026** — `claim_my_business()` now also assigns the claiming user's still-unassigned records (products, purchase_orders, stocktakes, reorder_log with `business_id IS NULL`) to the claimed business, atomically with the membership update; claim-function tests added in §5.3. **The migration has NOT been executed.**
 
 This document is the mandatory safeguard package required before the Chapter 2
 schema migration (`chapter2-migration.sql`) is run.
@@ -136,9 +136,11 @@ would let a user set their own `business_id` (join another business) or
 3. **Trusted RPC:** `claim_my_business(p_business_id)` is the only supported
    API path for establishing membership. It verifies the caller created the
    business and that they have no business yet (so it can never switch an
-   existing membership), and it never touches `role`. Used by the app from
-   the Chapter 2 business-profile stage; harmless for the current app
-   version.
+   existing membership), and it never touches `role`. On success it ALSO
+   assigns the caller's own still-unassigned records (`business_id IS NULL`)
+   to the claimed business — atomically, in the same transaction. Used by
+   the app from the Chapter 2 business-profile stage; harmless for the
+   current app version (which never calls it).
 
 **Explicit trust boundary (revision 2):** the guard's only bypass is an
 explicit **service_role JWT** (`auth.role() = 'service_role'`) — the trusted
@@ -170,10 +172,26 @@ working unchanged, but new rows can no longer be orphaned or cross-assigned.
    attributed to someone else.
 3. The user calls `claim_my_business(business_id)` — the trusted RPC verifies
    they created that business and have no membership yet, then sets
-   `users.business_id`. The guard trigger allows exactly this shape.
+   `users.business_id` and assigns the user's own `business_id = NULL`
+   records (products, purchase_orders, stocktakes, reorder_log) to the
+   claimed business, atomically. The guard trigger allows exactly this shape
+   — it stays ACTIVE during the claim (no trigger is disabled) and its own
+   `created_by = auth.uid()` check re-validates the real caller.
    Membership can never be changed again via the API (only trusted logic).
    (Steps 2–3 are implemented by the app in the Chapter 2 business-profile
    stage; until then new users simply have `business_id = null`.)
+
+**Claim-backfill guarantees (revision 3):**
+- Only records **owned by the authenticated user** (`user_id = auth.uid()`)
+  are updated.
+- Only records where `business_id IS NULL` are updated — rows already
+  assigned to any business (own or another) are never touched.
+- **Only `business_id` changes** — stock quantities, order details,
+  supplier_name / supplier_email snapshots and every other column are left
+  exactly as they are.
+- Membership + backfill run in **one transaction** (PostgREST wraps the RPC
+  in one): any failure rolls both back — no partial claim.
+- Full test coverage: §5.3.
 
 ### 2.3 Cross-business access is blocked by policy, not UI
 
@@ -413,7 +431,7 @@ see only its own (empty) data. Then, as the new user:
 insert a business (`created_by` = own uid — must succeed), call
 `claim_my_business(<new biz id>)` (must succeed), and confirm the guard now
 rejects joining any other business. Repeat Tests 1–5 between the new user
-and user A — all must pass.
+and user A — all must pass. (Full claim-function behaviour: §5.3.)
 
 **Test 9 — Row counts unchanged [Execution]:**
 run the migration's verification query 4 and compare products /
@@ -433,6 +451,147 @@ businesses are new tables and will be non-zero).
   owner-only `DISABLE TRIGGER` window instead.
 - `enforce_business_ownership()` triggers exist on all 4 data tables
   (INSERT) and the 2 composite FKs guarantee supplier/business consistency.
+- `claim_my_business()` (§9 of the migration): `security definer`, execute
+  granted only to `authenticated` (revoked from `public`/`anon`); validates
+  `auth.uid()` is non-null; validates the business exists AND
+  `created_by = auth.uid()`; updates `users.business_id` only where it is
+  currently NULL (cannot switch); never touches `users.role`; the backfill
+  UPDATEs touch ONLY `business_id` of rows with `user_id = caller` AND
+  `business_id IS NULL` on the 4 data tables — nothing else. All inside one
+  function/transaction, so a failure anywhere rolls back everything.
+- The guard trigger is NOT disabled inside `claim_my_business()` — the
+  membership UPDATE passes the guard's first-time-claim branch legitimately
+  (`old.business_id IS NULL` + `created_by = auth.uid()`), and `auth.uid()`
+  inside the security definer function still resolves from the CALLER's JWT,
+  so the guard validates the real caller.
+
+### 5.3 claim_my_business() — positive and negative tests [Execution]
+
+All of §5.3 is **[Execution]**: none of it has been run — the migration and
+these tests execute only in Stage 2, after the backup.
+
+These tests need a genuinely **pre-claim user**: register a brand-new
+account (call it user C, `<USER_C_UID>`). User A and user B already have
+businesses and are used for the negative cases. Every block uses the §5.1
+preamble (with user C's uid in the claims) and its own
+`begin; … rollback;`.
+
+**Setup for user C [Execution]:** as user C (preamble + canaries), create
+test data BEFORE claiming — the app or plain inserts (RLS allows own rows
+with `business_id = null`):
+
+```sql
+-- as user C (pre-claim), via supabase-js or SQL Editor in auth context:
+insert into public.products (user_id, name, supplier, current_stock)
+  values ('<USER_C_UID>', 'claim-test-product', 'Test Supplier', 10);
+insert into public.stocktakes (user_id, notes)   -- adjust to real columns
+  values ('<USER_C_UID>', 'claim-test-stocktake');
+-- record the counts:
+select 'products' t, count(*) from public.products where user_id = '<USER_C_UID>'
+union all select 'pos', count(*) from public.purchase_orders where user_id = '<USER_C_UID>'
+union all select 'stocktakes', count(*) from public.stocktakes where user_id = '<USER_C_UID>'
+union all select 'reorder_log', count(*) from public.reorder_log where user_id = '<USER_C_UID>';
+```
+
+**Test 10 (POSITIVE) — a first-time claim succeeds with the guard trigger
+ACTIVE, assigns membership, and backfills the user's own NULL records:
+[Execution]**
+
+```sql
+begin;
+  -- §5.1 preamble for USER_C + both canaries first
+  -- (guard trigger must still be installed: verification query 7 listed it)
+
+  -- user C creates their own business (RLS: created_by = auth.uid()):
+  insert into public.businesses (name, contact_email, created_by)
+    values ('Claim Test Co', 'claimtest@example.com', '<USER_C_UID>')
+    returning id as new_biz_id;
+
+  -- the claim (guard trigger is active — nothing is disabled):
+  select public.claim_my_business(<NEW_BIZ_ID>);          -- must succeed, returns the id
+
+  -- membership assigned:
+  select business_id from public.users where id = '<USER_C_UID>';
+  -- must be <NEW_BIZ_ID>
+
+  -- backfill: every previously-NULL own row is now assigned:
+  select count(*) from public.products
+    where user_id = '<USER_C_UID>' and business_id is null;                 -- must be 0
+  select count(*) from public.products
+    where user_id = '<USER_C_UID>' and business_id = <NEW_BIZ_ID>;
+  -- must equal the pre-claim product count recorded in the setup
+  -- (repeat for purchase_orders / stocktakes / reorder_log — all 0 null)
+
+  -- role untouched:
+  select role from public.users where id = '<USER_C_UID>';  -- must be unchanged ('owner')
+rollback;
+```
+
+**Test 11 (POSITIVE) — the claim changes ONLY business_id, no business data:
+[Execution]** — repeat Test 10, but snapshot before/after:
+
+```sql
+  -- BEFORE the claim, as user C:
+  select name, current_stock, supplier, supplier_email
+    from public.products where user_id = '<USER_C_UID>' for update;
+  -- AFTER the claim:
+  select name, current_stock, supplier, supplier_email
+    from public.products where user_id = '<USER_C_UID>';  -- identical values
+  -- likewise for purchase_orders: supplier_name / supplier_email / status /
+  -- order details must be identical; only business_id differs.
+```
+
+**Test 12 (NEGATIVE) — an already-member user cannot claim again, and the
+failed claim leaves NO partial changes: [Execution]** — as user A (existing
+member of <BIZ_A>):
+
+```sql
+begin;
+  -- §5.1 preamble for USER_A + canaries
+  -- user A attempts to claim a second business they created:
+  insert into public.businesses (name, contact_email, created_by)
+    values ('A Second Co', 'a-second@example.com', '<USER_A_UID>')
+    returning id;                          -- insert itself is allowed
+  select public.claim_my_business(<SECOND_BIZ_ID>);
+  -- MUST FAIL: 'SmartStock: this account already has a business.'
+rollback;
+-- then, in a FRESH transaction, confirm nothing changed:
+select business_id from public.users where id = '<USER_A_UID>';  -- still <BIZ_A>
+select count(*) from public.products where user_id = '<USER_A_UID>' and business_id is null;
+-- must be 0 (A's rows were never unassigned, and the failed claim changed nothing)
+```
+
+**Test 13 (NEGATIVE) — a pre-claim user cannot claim a business created by
+someone else; failed claim leaves no partial changes: [Execution]** — as
+user C (still pre-claim):
+
+```sql
+begin;
+  -- §5.1 preamble for USER_C + canaries
+  select public.claim_my_business('<BIZ_A>'::uuid);
+  -- MUST FAIL: 'SmartStock: business not found or not created by you.'
+  -- (guard trigger's created_by check; definer status does not bypass it —
+  --  auth.uid() inside the function resolves to the CALLER, user C)
+rollback;
+-- fresh transaction — verify no partial changes:
+select business_id from public.users where id = '<USER_C_UID>';  -- must still be NULL
+select count(*) from public.products where user_id = '<USER_C_UID>' and business_id is not null;
+-- must be 0: user C's records were NOT assigned to any business
+```
+
+**Test 14 (NEGATIVE) — unauthenticated callers cannot execute the function:
+[Execution]** — without the §5.1 preamble, i.e. as `anon`/no JWT claims:
+
+```sql
+begin;
+  set local role anon;                     -- not authenticated
+  select public.claim_my_business('<BIZ_A>'::uuid);
+  -- MUST FAIL: permission denied (execute revoked from public/anon)
+rollback;
+```
+
+and an authenticated user with a missing/blank `sub` claim must receive
+`'SmartStock: authentication required.'` — the `auth.uid() is null` check.
 
 ## 6. Checked risks
 
@@ -445,7 +604,10 @@ businesses are new tables and will be non-zero).
 - **Access control:** membership is tamper-proof (§2.1); cross-business reads
   and writes are blocked by policy `WITH CHECK`/`USING` clauses (§2.3);
   supplier links cannot cross businesses (§2.4). Child tables
-  (order_items, stocktake_items) remain parent-scoped.
+  (order_items, stocktake_items) remain parent-scoped. The claim RPC cannot
+  switch membership, escalate roles, or claim another user's business, and
+  its backfill touches only the caller's own `business_id = NULL` rows
+  (§2.2, §5.3).
 - **App compatibility during transition:** the app never updates
   `public.users` (verified by code search) and inserts omit `business_id` —
   the ownership triggers fill it from membership (or leave it null for
@@ -480,4 +642,6 @@ Specifically unverified until Stage 2:
 - Which GUC layout (`request.jwt.claim.sub` vs `request.jwt.claims` JSON)
   your Supabase instance's `auth.uid()`/`auth.role()` read — the tests set
   both, so they work either way.
+- Every test in §5, including the claim-function tests in §5.3 — none have
+  been executed; they run only after the migration is applied in Stage 2.
 - Real-device behaviour after migration (existing account, then new account).

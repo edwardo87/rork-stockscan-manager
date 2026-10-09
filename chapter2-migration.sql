@@ -1,45 +1,42 @@
 -- =============================================================================
 -- SmartStock — Chapter 2 Migration: Business ownership + Supplier records
--- SECURITY-HARDENED REVISION (9 October 2026) — supersedes the 8 Oct draft.
+-- SECURITY-HARDENED REVISION 2 (9 October 2026). Supersedes revision 1.
 -- =============================================================================
 -- Run in: Supabase Dashboard → SQL Editor → paste this file → Run.
 --
 -- PREREQUISITE (mandatory): a verified backup must exist first.
---   See chapter2-db-safeguards.md for the backup + verification procedure.
+--   See chapter2-db-safeguards.md §1 for the backup + verification procedure.
 --
 -- Design principles:
 --   • ADDITIVE ONLY. No existing column is dropped, renamed or retyped.
---     No row is deleted. Existing user access is preserved by keeping every
---     user_id column and by making every RLS policy accept EITHER the old
---     user-owns-row condition OR the new business-membership condition.
---   • ATOMIC. The whole migration runs inside one transaction. Any failed
+--     No row is deleted. Every RLS policy accepts EITHER the old
+--     user-owns-row condition OR the new business-membership condition, so
+--     existing users keep full access.
+--   • ATOMIC. The whole migration is one transaction. Any failed
 --     prerequisite, failed backfill or failed integrity check aborts the
 --     ENTIRE transaction — the database is left exactly as it was.
---   • Idempotent: every statement is safe to re-run (IF NOT EXISTS /
---     WHERE NOT EXISTS / null-guarded updates).
---   • MEMBERSHIP IS TAMPER-PROOF (fixes the privilege-escalation finding):
---       - API users have NO column-level UPDATE privilege on public.users at
---         all (the app never updates that row; profiles live in businesses).
---       - A BEFORE UPDATE trigger additionally blocks any change to
---         users.business_id / users.role that does not come from trusted
---         database logic. A user can only claim a business THEY created.
---       - RLS alone cannot protect individual columns of a row the user owns;
---         the column grants + trigger close that hole.
---   • INSERT/UPDATE policies on data tables are tightened so no one can
---     attach their rows to (or move rows into) another business.
---   • Supplier backfill groups by the CASE-INSENSITIVE, TRIMMED name, so
---     'AWS', 'aws' and ' AWS ' become ONE supplier per business, and the
---     best available supplier email is preserved.
---   • One business is auto-created per existing user (created_by = the user);
---     every existing row is assigned to that business. The existing Lifestyle
---     Windows account keeps seeing all of its records exactly as before.
---   • New tables: businesses, suppliers.
---   • New columns: users.business_id (+ role hook for later chapters),
---     products.business_id + products.supplier_id (uuid FK),
---     purchase_orders.business_id + purchase_orders.supplier_record_id (uuid
---     FK — the existing TEXT supplier_id column is left untouched),
---     stocktakes.business_id, reorder_log.business_id.
---     order_items / stocktake_items stay scoped through their parents.
+--   • Idempotent: every statement is safe to re-run.
+--   • MEMBERSHIP IS TAMPER-PROOF:
+--       - API roles have NO column-level UPDATE privilege on public.users.
+--       - A guard trigger blocks any API change to users.business_id /
+--         users.role. The ONLY privileged bypass is an explicit service_role
+--         JWT (trusted backend). Absence of JWT claims grants NOTHING.
+--         The migration itself temporarily DISABLES the guard trigger for
+--         its own privileged backfill (a table-owner SQL action that API
+--         users can never perform) and re-enables it immediately after.
+--       - claim_my_business() is the only API path to establish membership,
+--         and only into a business the caller created (businesses.created_by).
+--   • BUSINESS OWNERSHIP OF NEW RECORDS IS DATABASE-ENFORCED:
+--       - BEFORE INSERT triggers on products, purchase_orders, stocktakes
+--         and reorder_log populate business_id from the inserting user's
+--         membership (null for pre-claim users — legacy compatible) and
+--         reject cross-business values.
+--       - Composite foreign keys (supplier_id, business_id) → suppliers
+--         guarantee a product or PO can never link to a supplier from a
+--         different business — enforced by the database, not the app.
+--   • Supplier backfill groups by the CASE-INSENSITIVE, TRIMMED name:
+--     'AWS', 'aws' and ' AWS ' become ONE supplier per business; emails are
+--     preserved; re-runs create no duplicates.
 --   • Historical POs keep their supplier_name / supplier_email snapshots.
 -- =============================================================================
 
@@ -109,6 +106,12 @@ create table if not exists public.suppliers (
 -- 'AWS', 'aws' and ' AWS ' are the same supplier within one business.
 create unique index if not exists suppliers_business_name_uq
   on public.suppliers (business_id, lower(trim(name)));
+
+-- Target for the composite foreign keys added in section 3 (supplier
+-- consistency: a product/PO link is only valid within the same business).
+create unique index if not exists suppliers_id_business_uq
+  on public.suppliers (id, business_id);
+
 create index if not exists suppliers_business_idx on public.suppliers(business_id);
 
 drop trigger if exists trg_suppliers_updated_at on public.suppliers;
@@ -120,7 +123,8 @@ create trigger trg_suppliers_updated_at
 -- ---------- 3. New columns on existing tables --------------------------------
 alter table public.users add column if not exists business_id uuid references public.businesses(id);
 -- role is a forward hook for Chapter 7 (owner/admin/staff). Not used by the app yet.
--- IMMUTABLE to API users: enforced by the column grants and trigger in section 7.
+-- IMMUTABLE to API users: enforced by the column grants (section 9) and the
+-- membership guard trigger (section 4).
 alter table public.users add column if not exists role text not null default 'owner';
 
 alter table public.products        add column if not exists business_id uuid references public.businesses(id);
@@ -136,13 +140,89 @@ create index if not exists purchase_orders_business_idx on public.purchase_order
 create index if not exists stocktakes_business_idx      on public.stocktakes(business_id);
 create index if not exists reorder_log_business_idx     on public.reorder_log(business_id);
 
+-- Supplier/business consistency (CORRECTION 4): declarative composite FKs.
+-- (supplier_id, business_id) must reference a suppliers row with the SAME
+-- business. With MATCH SIMPLE semantics, rows where either column is NULL
+-- (legacy app inserts before Stage 4) are not constrained — so current app
+-- behaviour is untouched. Once both columns are populated, the database
+-- itself rejects any cross-business supplier link, on INSERT and UPDATE.
+do $$
+begin
+  alter table public.products add constraint products_supplier_record_consistent_fk
+    foreign key (supplier_id, business_id) references public.suppliers (id, business_id);
+exception when duplicate_object then null; -- already applied (idempotent re-run)
+end $$;
 
--- ---------- 4. Backfill: one business per existing user ----------------------
+do $$
+begin
+  alter table public.purchase_orders add constraint purchase_orders_supplier_record_consistent_fk
+    foreign key (supplier_record_id, business_id) references public.suppliers (id, business_id);
+exception when duplicate_object then null;
+end $$;
+
+
+-- ---------- 4. Membership guard (created BEFORE the backfill uses it) --------
+-- CORRECTION 2. A row-level policy such as `using (auth.uid() = id)` cannot
+-- protect individual columns of a row the user owns (users.business_id,
+-- users.role). Layers:
+--   (a) Column grants (section 9): API roles get NO update privilege.
+--   (b) This guard trigger: rejects any API change to role (immutable) or to
+--       business_id unless it is a first-time claim into a business the same
+--       user created. The ONLY bypass is an explicit service_role JWT — the
+--       PRESENCE of a service_role claim, NOT the absence of claims, is what
+--       marks a trusted operation. API users can never forge it. Privileged
+--       migration sessions instead disable the trigger explicitly, below —
+--       a table-owner action unreachable from the API.
+--   (c) claim_my_business() RPC (section 9): the ONLY API path for
+--       establishing membership; cannot switch an existing membership and
+--       never touches role.
+create or replace function public.enforce_users_membership_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Explicit trust boundary: a service_role JWT only. Sessions with no JWT
+  -- claims (direct SQL / SQL Editor) are NOT treated as administrators —
+  -- they are subject to the same customer rules and must explicitly disable
+  -- this trigger (as below) for privileged backfills.
+  if auth.role() = 'service_role' then
+    return new;
+  end if;
+
+  if new.role is distinct from old.role then
+    raise exception 'SmartStock: users.role is immutable to API users. Role changes happen only through trusted database logic.';
+  end if;
+
+  if new.business_id is distinct from old.business_id then
+    if old.business_id is not null then
+      raise exception 'SmartStock: business membership cannot be changed via the API.';
+    end if;
+    -- First-time claim only: the target business must have been created by
+    -- the very user making the change.
+    if not exists (
+      select 1 from public.businesses b
+      where b.id = new.business_id and b.created_by = auth.uid()
+    ) then
+      raise exception 'SmartStock: a user may only join a business they created themselves.';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_users_membership_guard on public.users;
+create trigger trg_users_membership_guard
+  before update on public.users
+  for each row execute function public.enforce_users_membership_guard();
+
+
+-- ---------- 5. Backfill: one business per existing user ----------------------
 -- Idempotent: only creates a business for users that do not have one yet.
--- Business name is derived from the account email's local part; the user can
--- rename it in the app (Business Profile, next stage). created_by records
--- which user established the business — this is what makes first-time
--- membership claims secure (see section 7).
+-- created_by records which user established the business — this is what makes
+-- first-time membership claims secure (see section 4).
 insert into public.businesses (name, contact_email, created_by)
 select
   case
@@ -165,16 +245,22 @@ where u.email = b.contact_email
   and b.created_by is null;
 
 -- Assign every user to their business (matched by contact_email).
--- Runs as a privileged SQL session (no JWT claims) — permitted by the
--- membership guard trigger in section 7.
+-- The membership guard trigger is disabled for THIS statement only: this SQL
+-- Editor session is the table owner and carries no service_role JWT, so the
+-- trigger's customer rules would (correctly) reject the backfill. Disabling
+-- a trigger requires table ownership — impossible for API users.
+alter table public.users disable trigger trg_users_membership_guard;
+
 update public.users u
 set business_id = b.id
 from public.businesses b
 where b.contact_email = u.email
   and u.business_id is null;
 
+alter table public.users enable trigger trg_users_membership_guard;
 
--- ---------- 5. Backfill: business_id on all existing data rows ---------------
+
+-- ---------- 6. Backfill: business_id on all existing data rows ---------------
 update public.products p
 set business_id = u.business_id
 from public.users u
@@ -196,14 +282,14 @@ from public.users u
 where u.id = rl.user_id and rl.business_id is null;
 
 
--- ---------- 6. Backfill: supplier records from existing product strings ------
+-- ---------- 7. Backfill: supplier records from existing product strings ------
 -- Groups by the CASE-INSENSITIVE, TRIMMED supplier name so that 'AWS', 'aws'
 -- and ' AWS ' produce ONE supplier per business (the unique index can no
 -- longer be violated by spelling variants). The canonical display name is the
--- alphabetically-first trimmed spelling seen. Supplier emails are preserved:
--- the best non-empty product.supplier_email in the group is used, and existing
--- supplier records with an empty email are topped up afterwards. Existing
--- supplier text on products and historical POs is NOT modified.
+-- alphabetically-first trimmed spelling seen. Emails are preserved: the best
+-- non-empty product.supplier_email in the group is used, and existing supplier
+-- records with an empty email are topped up afterwards. Existing supplier
+-- text on products and historical POs is NOT modified.
 insert into public.suppliers (business_id, name, ordering_email)
 select src.business_id, src.name, coalesce(src.email, '')
 from (
@@ -244,11 +330,14 @@ where s.business_id = src.business_id
   and src.email is not null;
 
 -- Link products to their supplier record by name match (per business).
+-- CORRECTION 7: plain comma-separated FROM list — no JOIN clauses referencing
+-- the target-table alias (UPDATE ... FROM with ON conditions that reference
+-- the target is at best ambiguous; this form is unambiguous and standard).
 update public.products p
 set supplier_id = s.id
-from public.suppliers s
-join public.users u on u.id = p.user_id
-where s.business_id = u.business_id
+from public.suppliers s, public.users u
+where u.id = p.user_id
+  and s.business_id = u.business_id
   and lower(trim(s.name)) = lower(trim(p.supplier))
   and p.supplier_id is null;
 
@@ -256,63 +345,73 @@ where s.business_id = u.business_id
 -- supplier_name / supplier_email snapshots are left exactly as they are.
 update public.purchase_orders po
 set supplier_record_id = s.id
-from public.suppliers s
-join public.users u on u.id = po.user_id
-where s.business_id = u.business_id
+from public.suppliers s, public.users u
+where u.id = po.user_id
+  and s.business_id = u.business_id
   and lower(trim(s.name)) = lower(trim(po.supplier_name))
   and trim(po.supplier_name) <> ''
   and po.supplier_record_id is null;
 
 
--- ---------- 7. Membership security (trusted database logic) ------------------
--- Fixes the privilege-escalation finding: a user-owned RLS policy cannot
--- protect individual columns (users.business_id, users.role). Three layers:
---   (a) Column grants: API roles get NO update privilege on public.users.
---   (b) Trigger: even a privileged/accidental UPDATE cannot change
---       business_id or role except via trusted paths.
---   (c) claim_my_business(): the ONLY way an API user may establish
---       membership — and only into a business THEY created (created_by).
-
-create or replace function public.enforce_users_membership_guard()
+-- ---------- 8. Business ownership of NEW records (CORRECTION 3) --------------
+-- The current app inserts products / POs / stocktakes / reorder_log rows with
+-- business_id omitted (null). These BEFORE INSERT triggers populate it from
+-- the inserting user's membership and validate any explicit value:
+--   • member user, business_id omitted  → filled with their business.
+--   • member user, business_id provided → must equal their own business.
+--   • pre-claim user (no business yet)  → stays null (legacy compatible);
+--     they cannot attach rows to ANY business until they claim one.
+-- RLS WITH CHECK (section 11) then re-validates the final row, so the
+-- trigger and the policy agree. Bypass only for an explicit service_role
+-- JWT (trusted backend); claim-less direct SQL sessions that try to set a
+-- business_id are correctly rejected.
+create or replace function public.enforce_business_ownership()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_own uuid;
 begin
-  -- Privileged SQL sessions (this migration, admin tools) carry no JWT
-  -- claims; PostgREST always sets them. Only claim-less sessions pass freely.
-  if current_setting('request.jwt.claims', true) is null then
+  if auth.role() = 'service_role' then
     return new;
   end if;
 
-  if new.role is distinct from old.role then
-    raise exception 'SmartStock: users.role is immutable to API users. Role changes happen only through trusted database logic.';
-  end if;
+  select business_id into v_own from public.users where id = auth.uid();
 
-  if new.business_id is distinct from old.business_id then
-    if old.business_id is not null then
-      raise exception 'SmartStock: business membership cannot be changed via the API.';
-    end if;
-    -- First-time claim only: the target business must have been created by
-    -- the very user making the change.
-    if not exists (
-      select 1 from public.businesses b
-      where b.id = new.business_id and b.created_by = auth.uid()
-    ) then
-      raise exception 'SmartStock: a user may only join a business they created themselves.';
-    end if;
+  if new.business_id is null then
+    new.business_id := v_own; -- null stays null for pre-claim users
+  elsif v_own is null or new.business_id <> v_own then
+    raise exception 'SmartStock: business_id must reference your own business.';
   end if;
 
   return new;
 end;
 $$;
 
-drop trigger if exists trg_users_membership_guard on public.users;
-create trigger trg_users_membership_guard
-  before update on public.users
-  for each row execute function public.enforce_users_membership_guard();
+drop trigger if exists trg_products_business_owner on public.products;
+create trigger trg_products_business_owner
+  before insert on public.products
+  for each row execute function public.enforce_business_ownership();
 
+drop trigger if exists trg_purchase_orders_business_owner on public.purchase_orders;
+create trigger trg_purchase_orders_business_owner
+  before insert on public.purchase_orders
+  for each row execute function public.enforce_business_ownership();
+
+drop trigger if exists trg_stocktakes_business_owner on public.stocktakes;
+create trigger trg_stocktakes_business_owner
+  before insert on public.stocktakes
+  for each row execute function public.enforce_business_ownership();
+
+drop trigger if exists trg_reorder_log_business_owner on public.reorder_log;
+create trigger trg_reorder_log_business_owner
+  before insert on public.reorder_log
+  for each row execute function public.enforce_business_ownership();
+
+
+-- ---------- 9. Membership grants and trusted claim RPC (CORRECTION 2) --------
 -- (a) Column grants: the app never PATCHes public.users today (verified by
 -- code search). Business-profile data lives in public.businesses.
 revoke update on table public.users from authenticated;
@@ -334,6 +433,10 @@ begin
     raise exception 'SmartStock: authentication required.';
   end if;
 
+  if p_business_id is null then
+    raise exception 'SmartStock: a business id is required.';
+  end if;
+
   select b.id into v_bid
   from public.businesses b
   where b.id = p_business_id and b.created_by = v_uid;
@@ -342,6 +445,7 @@ begin
     raise exception 'SmartStock: business not found or not created by you.';
   end if;
 
+  -- Cannot switch membership: only fills a NULL business_id.
   update public.users u
   set business_id = v_bid
   where u.id = v_uid and u.business_id is null;
@@ -365,7 +469,7 @@ grant update (name, contact_email, phone, address, delivery_address, logo_url)
   on table public.businesses to authenticated;
 
 
--- ---------- 8. RLS: businesses ----------------------------------------------
+-- ---------- 10. RLS: businesses ----------------------------------------------
 alter table public.businesses enable row level security;
 drop policy if exists "businesses_select_member" on public.businesses;
 drop policy if exists "businesses_insert_own" on public.businesses;
@@ -376,6 +480,8 @@ create policy "businesses_select_member" on public.businesses
     id = (select business_id from public.users where id = auth.uid())
   );
 -- A user may only establish a business that records THEM as the creator.
+-- (This is the secure first-time-membership path: insert own business with
+-- created_by = self, then claim it via claim_my_business().)
 create policy "businesses_insert_own" on public.businesses
   for insert with check (created_by = auth.uid());
 create policy "businesses_update_member" on public.businesses
@@ -387,7 +493,7 @@ create policy "businesses_update_member" on public.businesses
   );
 
 
--- ---------- 9. RLS: suppliers (member-scoped) --------------------------------
+-- ---------- 11. RLS: suppliers (member-scoped) -------------------------------
 alter table public.suppliers enable row level security;
 drop policy if exists "suppliers_select" on public.suppliers;
 drop policy if exists "suppliers_insert" on public.suppliers;
@@ -414,13 +520,13 @@ create policy "suppliers_delete" on public.suppliers
   );
 
 
--- ---------- 10. RLS: business-aware policies on existing tables --------------
+-- ---------- 12. RLS: business-aware policies on existing tables --------------
 -- SELECT/DELETE: EITHER the legacy condition (auth.uid() = user_id) OR
 -- business membership — existing accounts keep full access.
--- INSERT/UPDATE (with check): the row's FINAL state must be legitimate —
---   either a legacy self-owned row with no business, or a row inside the
---   caller's OWN business. This closes the hole where a user could insert or
---   move a row into another business while satisfying a user_id-only check.
+-- INSERT/UPDATE (WITH CHECK): the row's FINAL state (evaluated AFTER the
+-- section 8 ownership triggers have populated business_id) must be legitimate
+-- — either a legacy self-owned row with no business, or a row inside the
+-- caller's OWN business. No one can create or move rows into another business.
 --
 -- (The identical block is applied to products, purchase_orders, stocktakes
 -- and reorder_log.)
@@ -548,7 +654,7 @@ create policy "reorder_log_update_own" on public.reorder_log
 -- which are now business-aware through their own tables).
 
 
--- ---------- 11. Integrity gate (aborts the ENTIRE transaction if unmet) ------
+-- ---------- 13. Integrity gate (aborts the ENTIRE transaction if unmet) ------
 do $$
 begin
   if exists (select 1 from public.users where business_id is null) then
@@ -575,7 +681,7 @@ commit;
 -- Security (negative-access) tests are in chapter2-db-safeguards.md §5.
 -- =============================================================================
 
--- 1. Every user has a business (belt-and-braces; section 11 already enforced):
+-- 1. Every user has a business (belt-and-braces; section 13 already enforced):
 --    must return 0 rows
 select id, email from public.users where business_id is null;
 
@@ -630,3 +736,17 @@ select grantee, privilege_type
  where table_schema = 'public' and table_name = 'users'
    and grantee in ('authenticated', 'anon')
    and privilege_type = 'UPDATE';
+
+-- 7. Enforcement objects present (guard trigger, 4 ownership triggers,
+--    composite FKs; must list 1 + 4 triggers and 2 constraints):
+select tgrelid::regclass as table_name, tgname
+  from pg_trigger
+ where not tgisinternal
+   and tgname in ('trg_users_membership_guard',
+                  'trg_products_business_owner',
+                  'trg_purchase_orders_business_owner',
+                  'trg_stocktakes_business_owner',
+                  'trg_reorder_log_business_owner');
+select conname from pg_constraint
+ where conname in ('products_supplier_record_consistent_fk',
+                   'purchase_orders_supplier_record_consistent_fk');

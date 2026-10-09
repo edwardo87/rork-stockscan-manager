@@ -1,5 +1,5 @@
 -- =============================================================================
--- SmartStock — Chapter 2 ROLLBACK script (security-hardened revision, 9 Oct 2026)
+-- SmartStock — Chapter 2 ROLLBACK script (security-hardened revision 2, 9 Oct 2026)
 -- =============================================================================
 -- Run in: Supabase Dashboard → SQL Editor → paste this file → Run.
 --
@@ -25,11 +25,12 @@
 --     auto-derived state from product strings (same caveat as above).
 --   • users.business_id / users.role assignments.
 --   • products.supplier_id and purchase_orders.supplier_record_id links.
---   • The claim_my_business() RPC.
--- What is NEVER lost: all original products, purchase orders (including
--- supplier_name / supplier_email snapshots), order items, stocktakes,
--- stocktake items, reorder_log rows, and all auth accounts — these live in
--- original columns the migration and rollback never touch.
+--   • The security objects (guard trigger, ownership triggers, claim RPC).
+-- What is NEVER lost: all original products, purchase orders (including the
+-- original supplier_id TEXT, supplier_name and supplier_email snapshots),
+-- order items, stocktakes, stocktake items, reorder_log rows, and all auth
+-- accounts — these live in original columns the migration and rollback never
+-- touch.
 --
 -- The pre-migration BACKUP (chapter2-db-safeguards.md) remains the ultimate
 -- fallback. Prefer restoring from backup if anything looks wrong beyond the
@@ -42,6 +43,13 @@ begin;
 -- ---------- 1. Remove Chapter 2 security objects -----------------------------
 drop trigger if exists trg_users_membership_guard on public.users;
 drop function if exists public.enforce_users_membership_guard();
+
+drop trigger if exists trg_products_business_owner on public.products;
+drop trigger if exists trg_purchase_orders_business_owner on public.purchase_orders;
+drop trigger if exists trg_stocktakes_business_owner on public.stocktakes;
+drop trigger if exists trg_reorder_log_business_owner on public.reorder_log;
+drop function if exists public.enforce_business_ownership();
+
 drop function if exists public.claim_my_business(uuid);
 
 
@@ -126,12 +134,14 @@ drop policy if exists "suppliers_delete" on public.suppliers;
 
 
 -- ---------- 4. Drop the new columns ------------------------------------------
--- (Original columns — including products.supplier, purchase_orders.supplier_id
---  text, supplier_name and supplier_email snapshots — are never touched.
---  Dropping a column drops its FK constraint with it, so no CASCADE needed.)
-alter table public.products        drop column if exists supplier_id;
+-- Table-specific: ONLY columns added by Chapter 2 are dropped.
+-- PRESERVED (original columns, never touched): purchase_orders.supplier_id
+-- (TEXT supplier name), products.supplier (TEXT), supplier_name and
+-- supplier_email snapshots on purchase_orders, and every user_id column.
+-- Dropping a column drops its FK constraints with it, so no CASCADE needed.
+alter table public.products        drop column if exists supplier_id;       -- Ch2 uuid FK (NOT the PO TEXT column)
 alter table public.products        drop column if exists business_id;
-alter table public.purchase_orders drop column if exists supplier_record_id;
+alter table public.purchase_orders drop column if exists supplier_record_id; -- Ch2 uuid FK (supplier_record_id)
 alter table public.purchase_orders drop column if exists business_id;
 alter table public.stocktakes      drop column if exists business_id;
 alter table public.reorder_log     drop column if exists business_id;
@@ -157,6 +167,8 @@ grant update on table public.users to authenticated, anon;
 
 
 -- ---------- 7. Integrity gate: nothing below may fail silently ---------------
+-- Checks ONLY columns/tables actually added by Chapter 2 (table-specific).
+-- purchase_orders.supplier_id (original TEXT) is deliberately NOT checked.
 do $$
 begin
   if exists (
@@ -165,13 +177,45 @@ begin
   ) then
     raise exception 'SmartStock rollback ABORTED: Chapter 2 tables still present. The transaction was rolled back — nothing was applied.';
   end if;
+  -- users: business_id, role
   if exists (
     select 1 from information_schema.columns
-    where table_schema = 'public'
-      and table_name in ('users', 'products', 'purchase_orders', 'stocktakes', 'reorder_log')
-      and column_name in ('business_id', 'role', 'supplier_id', 'supplier_record_id')
+    where table_schema = 'public' and table_name = 'users'
+      and column_name in ('business_id', 'role')
   ) then
-    raise exception 'SmartStock rollback ABORTED: Chapter 2 columns still present. The transaction was rolled back — nothing was applied.';
+    raise exception 'SmartStock rollback ABORTED: Chapter 2 columns still present on public.users. The transaction was rolled back — nothing was applied.';
+  end if;
+  -- products: business_id, supplier_id (the uuid FK — products.supplier TEXT is original)
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'products'
+      and column_name in ('business_id', 'supplier_id')
+  ) then
+    raise exception 'SmartStock rollback ABORTED: Chapter 2 columns still present on public.products. The transaction was rolled back — nothing was applied.';
+  end if;
+  -- purchase_orders: business_id, supplier_record_id (supplier_id TEXT is ORIGINAL — preserved, not checked)
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_orders'
+      and column_name in ('business_id', 'supplier_record_id')
+  ) then
+    raise exception 'SmartStock rollback ABORTED: Chapter 2 columns still present on public.purchase_orders. The transaction was rolled back — nothing was applied.';
+  end if;
+  -- stocktakes: business_id
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'stocktakes'
+      and column_name = 'business_id'
+  ) then
+    raise exception 'SmartStock rollback ABORTED: Chapter 2 columns still present on public.stocktakes. The transaction was rolled back — nothing was applied.';
+  end if;
+  -- reorder_log: business_id
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'reorder_log'
+      and column_name = 'business_id'
+  ) then
+    raise exception 'SmartStock rollback ABORTED: Chapter 2 columns still present on public.reorder_log. The transaction was rolled back — nothing was applied.';
   end if;
 end $$;
 
@@ -193,7 +237,8 @@ where schemaname = 'public'
 -- Should return 0 rows (no lingering security objects):
 select proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public'
-  and proname in ('enforce_users_membership_guard', 'claim_my_business');
+  and proname in ('enforce_users_membership_guard', 'enforce_business_ownership',
+                  'claim_my_business');
 
 -- Row counts must match your pre-migration backup counts exactly:
 select 'products' t, count(*) from public.products
@@ -203,5 +248,7 @@ union all select 'stocktakes', count(*) from public.stocktakes
 union all select 'stocktake_items', count(*) from public.stocktake_items
 union all select 'reorder_log', count(*) from public.reorder_log;
 
--- App re-test: the existing account must authenticate and load all records
--- unchanged on the physical iPhone before considering the rollback complete.
+-- Original columns preserved: purchase_orders.supplier_id must still exist:
+select column_name, data_type from information_schema.columns
+ where table_schema = 'public' and table_name = 'purchase_orders'
+   and column_name = 'supplier_id';   -- expect: supplier_id | text

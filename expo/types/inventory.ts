@@ -10,6 +10,10 @@ export interface Product {
   supplier: string;
   /** Optional supplier email — used to auto-fill the PO email recipient. */
   supplierEmail?: string;
+  /** Chapter 2: link to a first-class supplier record (public.suppliers.id).
+   *  Optional — legacy products keep only the supplier TEXT field. A null
+   *  value clears the link when the supplier text no longer matches. */
+  supplierId?: string | null;
   minStock: number;
   currentStock: number;
   unit: string;
@@ -24,6 +28,21 @@ export interface Supplier {
   phone: string;
   address: string;
   contactPerson: string;
+}
+
+/**
+ * Chapter 2: the user's business profile (public.businesses row).
+ * Ownership fields (created_by, role) are intentionally NOT editable here —
+ * membership and role are controlled by the database, never by the app UI.
+ */
+export interface BusinessProfile {
+  id: string;
+  name: string;
+  contactEmail: string;
+  phone: string;
+  address: string;
+  deliveryAddress: string;
+  logoUrl?: string;
 }
 
 export interface OrderItem {
@@ -49,6 +68,9 @@ export interface PurchaseOrder {
   supplierName: string;
   /** Supplier email snapshot at the time the PO was submitted (not derived live from products). */
   supplierEmail?: string;
+  /** Chapter 2: link to a first-class supplier record (public.suppliers.id).
+   *  App-side only; never overwrites historical snapshots. */
+  supplierRecordId?: string;
   date: string;
   items: OrderItem[];
   status: 'draft' | 'submitted' | 'received';

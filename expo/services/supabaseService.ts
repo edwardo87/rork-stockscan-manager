@@ -1,5 +1,5 @@
 import { supabase, getCurrentUser, isSupabaseConfigured } from '@/lib/supabase';
-import { Product, OrderItem, StocktakeItem, PurchaseOrder } from '@/types/inventory';
+import { Product, OrderItem, StocktakeItem, PurchaseOrder, Supplier, BusinessProfile } from '@/types/inventory';
 import { Database } from '@/types/supabase';
 
 type SupabaseProduct = Database['public']['Tables']['products']['Row'];
@@ -18,6 +18,7 @@ const convertSupabaseProductToApp = (supabaseProduct: SupabaseProduct): Product 
   category: supabaseProduct.category,
   supplier: supabaseProduct.supplier,
   supplierEmail: supabaseProduct.supplier_email || undefined,
+  supplierId: supabaseProduct.supplier_id || undefined,
   minStock: supabaseProduct.min_stock,
   currentStock: supabaseProduct.current_stock,
   unit: supabaseProduct.unit,
@@ -37,6 +38,10 @@ const convertAppProductToSupabase = (product: Product, userId: string): Supabase
   category: product.category,
   supplier: product.supplier,
   supplier_email: product.supplierEmail || null,
+  // Chapter 2: link to the first-class supplier record when known. The
+  // business_id column is intentionally NOT set — the BEFORE INSERT
+  // ownership trigger fills it from the user's membership.
+  supplier_id: product.supplierId || null,
   min_stock: product.minStock,
   current_stock: product.currentStock,
   unit: product.unit,
@@ -130,6 +135,7 @@ export class SupabaseService {
     if (updates.category !== undefined) supabaseUpdates.category = updates.category;
     if (updates.supplier !== undefined) supabaseUpdates.supplier = updates.supplier;
     if (updates.supplierEmail !== undefined) supabaseUpdates.supplier_email = updates.supplierEmail || null;
+    if (updates.supplierId !== undefined) supabaseUpdates.supplier_id = updates.supplierId || null;
     if (updates.minStock !== undefined) supabaseUpdates.min_stock = updates.minStock;
     if (updates.currentStock !== undefined) supabaseUpdates.current_stock = updates.currentStock;
     if (updates.unit !== undefined) supabaseUpdates.unit = updates.unit;
@@ -244,6 +250,9 @@ export class SupabaseService {
         // historical orders keep the address used at the time even if the
         // underlying product is later edited.
         supplier_email: order.supplierEmail || null,
+        // Chapter 2: link to the first-class supplier record when one matches.
+        // The supplier_name/email TEXT snapshots above are preserved unchanged.
+        supplier_record_id: order.supplierRecordId || null,
         date: order.date,
         status: order.status,
         notes: order.notes || null,
@@ -564,6 +573,308 @@ export class SupabaseService {
     } catch (error) {
       console.error('Error clearing user data:', error);
       throw new Error('Failed to clear user data');
+    }
+  }
+
+  // ==========================================================================
+  // Chapter 2 — Business profile
+  // ==========================================================================
+
+  /**
+   * Inserts the user's first business (created_by = self, required by RLS)
+   * and establishes membership via the trusted claim_my_business() RPC.
+   * The RPC is atomic: membership + business_id backfill of the user's
+   * records happen in one database transaction. Never called for users who
+   * already have a business.
+   */
+  static async createAndClaimBusiness(name: string, contactEmail: string): Promise<BusinessProfile> {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase is not configured');
+    }
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
+    const { data: business, error: insertError } = await supabase
+      .from('businesses')
+      .insert({
+        name: name.trim(),
+        contact_email: contactEmail.trim(),
+        created_by: user.id,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Error creating business:', JSON.stringify(insertError, null, 2));
+      throw new Error(`Failed to create business: ${insertError.message || 'Unknown database error'}`);
+    }
+
+    // Establishes membership; rejected if this account already has one or if
+    // the business was not created by this user (guard trigger + RPC checks).
+    const { data: claimedId, error: claimError } = await supabase.rpc('claim_my_business', {
+      p_business_id: business.id,
+    });
+
+    if (claimError) {
+      console.error('Error claiming business:', JSON.stringify(claimError, null, 2));
+      throw new Error(`Failed to claim business: ${claimError.message || 'Unknown database error'}`);
+    }
+    if (claimedId !== business.id) {
+      throw new Error('Unexpected business id returned by claim');
+    }
+
+    return {
+      id: business.id,
+      name: business.name ?? '',
+      contactEmail: business.contact_email ?? '',
+      phone: business.phone ?? '',
+      address: business.address ?? '',
+      deliveryAddress: business.delivery_address ?? '',
+      logoUrl: business.logo_url || undefined,
+    };
+  }
+
+  /**
+   * Updates ONLY the profile columns (the database grants allow nothing else
+   * — id / created_by / created_at are not updatable via the API).
+   */
+  static async updateBusinessProfile(
+    businessId: string,
+    updates: Partial<Pick<BusinessProfile, 'name' | 'contactEmail' | 'phone' | 'address' | 'deliveryAddress' | 'logoUrl'>>,
+  ): Promise<BusinessProfile> {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase is not configured');
+    }
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
+    const payload: Database['public']['Tables']['businesses']['Update'] = {};
+    if (updates.name !== undefined) payload.name = updates.name.trim();
+    if (updates.contactEmail !== undefined) payload.contact_email = updates.contactEmail.trim();
+    if (updates.phone !== undefined) payload.phone = updates.phone.trim();
+    if (updates.address !== undefined) payload.address = updates.address.trim();
+    if (updates.deliveryAddress !== undefined) payload.delivery_address = updates.deliveryAddress.trim();
+    if (updates.logoUrl !== undefined) payload.logo_url = updates.logoUrl.trim() || null;
+
+    const { data, error } = await supabase
+      .from('businesses')
+      .update(payload)
+      .eq('id', businessId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating business profile:', JSON.stringify(error, null, 2));
+      throw new Error(`Failed to save business profile: ${error.message || 'Unknown database error'}`);
+    }
+
+    return {
+      id: data.id,
+      name: data.name ?? '',
+      contactEmail: data.contact_email ?? '',
+      phone: data.phone ?? '',
+      address: data.address ?? '',
+      deliveryAddress: data.delivery_address ?? '',
+      logoUrl: data.logo_url || undefined,
+    };
+  }
+
+  // ==========================================================================
+  // Chapter 2 — Supplier records (public.suppliers)
+  // ==========================================================================
+
+  static async getSupplierRecords(): Promise<Supplier[]> {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase is not configured');
+    }
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
+    // RLS scopes rows to the caller's own business.
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('*')
+      .order('name');
+
+    if (error) {
+      console.error('Error fetching suppliers:', JSON.stringify(error, null, 2));
+      throw new Error(`Failed to load suppliers: ${error.message || 'Unknown database error'}`);
+    }
+
+    return (data || []).map(s => ({
+      id: s.id,
+      name: s.name ?? '',
+      email: s.ordering_email ?? '',
+      phone: s.phone ?? '',
+      address: s.address ?? '',
+      contactPerson: s.contact_person ?? '',
+    }));
+  }
+
+  static async createSupplierRecord(businessId: string, supplier: Supplier): Promise<Supplier> {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase is not configured');
+    }
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
+    const { data, error } = await supabase
+      .from('suppliers')
+      .insert({
+        business_id: businessId,
+        name: supplier.name.trim(),
+        ordering_email: supplier.email.trim(),
+        phone: supplier.phone.trim(),
+        contact_person: supplier.contactPerson.trim(),
+        address: supplier.address.trim(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating supplier:', JSON.stringify(error, null, 2));
+      throw new Error(`Failed to create supplier: ${error.message || 'Unknown database error'}`);
+    }
+
+    return {
+      id: data.id,
+      name: data.name ?? '',
+      email: data.ordering_email ?? '',
+      phone: data.phone ?? '',
+      address: data.address ?? '',
+      contactPerson: data.contact_person ?? '',
+    };
+  }
+
+  static async updateSupplierRecord(supplierId: string, supplier: Supplier): Promise<Supplier> {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase is not configured');
+    }
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
+    const { data, error } = await supabase
+      .from('suppliers')
+      .update({
+        name: supplier.name.trim(),
+        ordering_email: supplier.email.trim(),
+        phone: supplier.phone.trim(),
+        contact_person: supplier.contactPerson.trim(),
+        address: supplier.address.trim(),
+      })
+      .eq('id', supplierId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating supplier:', JSON.stringify(error, null, 2));
+      throw new Error(`Failed to save supplier: ${error.message || 'Unknown database error'}`);
+    }
+
+    return {
+      id: data.id,
+      name: data.name ?? '',
+      email: data.ordering_email ?? '',
+      phone: data.phone ?? '',
+      address: data.address ?? '',
+      contactPerson: data.contact_person ?? '',
+    };
+  }
+
+  /**
+   * Deletes a supplier record with safeguards:
+   * - supplier links on products are cleared first (the FK would otherwise
+   *   block the delete); the product supplier TEXT fields are untouched;
+   * - deletion is REFUSED when historical purchase orders reference the
+   *   record, so order history always keeps a valid supplier link.
+   */
+  static async deleteSupplierRecord(supplierId: string): Promise<void> {
+    if (!this.isAvailable()) {
+      throw new Error('Supabase is not configured');
+    }
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
+    const poCount = await this.getSupplierPurchaseOrderCount(supplierId);
+    if (poCount > 0) {
+      throw new Error(
+        `This supplier is used by ${poCount} purchase order${poCount === 1 ? '' : 's'} in your history. ` +
+        'Historical orders are never modified, so the supplier record cannot be deleted.',
+      );
+    }
+
+    // Unlink products (keeps their supplier TEXT snapshot fields unchanged).
+    const { error: unlinkError } = await supabase
+      .from('products')
+      .update({ supplier_id: null })
+      .eq('supplier_id', supplierId);
+
+    if (unlinkError) {
+      console.error('Error unlinking products from supplier:', JSON.stringify(unlinkError, null, 2));
+      throw new Error(`Failed to unlink products: ${unlinkError.message || 'Unknown database error'}`);
+    }
+
+    const { error } = await supabase
+      .from('suppliers')
+      .delete()
+      .eq('id', supplierId);
+
+    if (error) {
+      console.error('Error deleting supplier:', JSON.stringify(error, null, 2));
+      throw new Error(`Failed to delete supplier: ${error.message || 'Unknown database error'}`);
+    }
+  }
+
+  static async getSupplierPurchaseOrderCount(supplierId: string): Promise<number> {
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+    const { count, error } = await supabase
+      .from('purchase_orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('supplier_record_id', supplierId);
+
+    if (error) {
+      console.error('Error counting supplier purchase orders:', JSON.stringify(error, null, 2));
+      throw new Error(`Failed to check purchase order history: ${error.message || 'Unknown database error'}`);
+    }
+    return count ?? 0;
+  }
+
+  /**
+   * Best-effort product linking: sets supplier_id on the caller's products
+   * whose supplier TEXT matches the record name (case-insensitive). Never
+   * touches any other column.
+   */
+  static async linkProductsToSupplierRecord(supplierName: string, supplierId: string): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+    const user = await getCurrentUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    // Escape LIKE wildcards in the supplier name.
+    const pattern = supplierName.trim().replace(/[\\%_]/g, '\\$&');
+    const { error } = await supabase
+      .from('products')
+      .update({ supplier_id: supplierId })
+      .eq('user_id', user.id)
+      .ilike('supplier', pattern);
+
+    if (error) {
+      // Linking is an enhancement; log but never break the flow.
+      console.error('Error linking products to supplier record:', JSON.stringify(error, null, 2));
     }
   }
 }

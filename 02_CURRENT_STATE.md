@@ -54,8 +54,8 @@ Status date: 5 September 2026
 
 ## Current business-specific dependencies
 
-- Lifestyle Windows name and contact details are hardcoded in PO PDFs.
-- Lifestyle Windows details are hardcoded in email signatures.
+- ~~Lifestyle Windows name and contact details are hardcoded in PO PDFs.~~ RESOLVED 23 Oct 2026 (Chapter 2 Stage 5): PO PDF header and ship-to now come from the signed-in user's business profile, with graceful fallbacks when fields are empty.
+- ~~Lifestyle Windows details are hardcoded in email signatures.~~ RESOLVED 23 Oct 2026 (Chapter 2 Stage 5): the email signature is built from the business profile.
 - `Quote Ref: TBD`, `Due Date: ASAP` and related email wording are embedded purchasing assumptions.
 
 ## Current onboarding
@@ -66,8 +66,8 @@ This is the largest commercial barrier because it requires the customer to manua
 
 ## Current data limitations
 
-- Records belong directly to an authenticated user, not a business organisation.
-- Suppliers are not stored as entities.
+- ~~Records belong directly to an authenticated user, not a business organisation.~~ RESOLVED at the database level 19 Oct 2026 (Chapter 2 migration Revision 4): records belong to a business; app code integration completed 23 Oct 2026.
+- ~~Suppliers are not stored as entities.~~ RESOLVED 23 Oct 2026 (Chapter 2 Stage 4): first-class supplier records with CRUD in the app; legacy supplier TEXT fields on products and historical PO snapshots are preserved during the transition.
 - `unit` is overloaded and can receive `pack_size` values.
 - There is no numeric pack quantity.
 - There is no order unit.
@@ -93,6 +93,20 @@ The most recent successful device test generated a genuine PDF purchase order an
 ## Chapter 1 device verification (8 October 2026)
 
 Local physical-device verification has partially completed: existing-account authentication, stock record loading, and data retention all verified on an iPhone. Remaining: full ordering round (scan → order → PDF → history), stocktake round, and stock-quantity integrity — blocked until the defect above is resolved.
+
+## Chapter 2 production + integration status (23 October 2026)
+
+**Database (production).** The Chapter 2 migration **Revision 4** was executed by the owner on production Supabase on **19 October 2026**. Owner-reported verification: 2 users, 95 products, 2 stocktakes, 58 reorder_log rows, zero missing business assignments; `businesses` and `suppliers` tables, ownership triggers and RLS are live. **Do not re-run any Chapter 2 migration SQL against production.** The canonical Revision 4 SQL is not in this repository: `chapter2-migration.sql` / `chapter2-rollback.sql` hold the earlier Revision 3 safeguard package as a historical artifact (do not overwrite, do not execute). Supply the Revision 4 file to version-control it.
+
+**App integration (code complete, runChecks passed, not yet device-verified).**
+
+- Business Profile: Settings → Business Profile. Existing members view/edit their business row; pre-claim accounts get the one-time create + `claim_my_business()` flow (never re-called for users that already have a business). Membership/role are read-only in the UI.
+- Suppliers: Settings → Suppliers. CRUD on first-class supplier records; deletion is refused while historical POs reference the record, otherwise products are unlinked first. Supplier TEXT fields on products and historical PO snapshots are never modified. Matching products/POs to records is case/trim-insensitive on name.
+- PDF/email: header, ship-to and signature are driven by the business profile (cached, non-throwing lookup with empty-field fallbacks). Lifestyle Windows hardcoding removed from `pdfService.ts` and `emailService.ts`; `about.tsx` contact details are SmartStock's own identity and unchanged.
+- Ordering: submitting a PO stores `supplier_record_id` and uses the record's ordering email when available; submission still never inflates stock.
+- Business scoping relies on the production RLS/ownership triggers; `business_id` is never written by the app on inserts.
+
+**Outstanding:** Stage 6 device acceptance (cloud-preview account binding still unresolved; local clone testing can proceed). Chapter 2 cannot be marked complete until then.
 
 ## Immediate position
 

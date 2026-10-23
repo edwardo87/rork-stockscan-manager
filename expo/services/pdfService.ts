@@ -2,6 +2,8 @@ import { Platform } from 'react-native';
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system/legacy';
 import { formatDate } from '@/utils/dateUtils';
+import { getCachedBusinessProfile } from './businessProfileService';
+import { BusinessProfile } from '@/types/inventory';
 
 export interface POData {
   id: string;
@@ -29,13 +31,55 @@ export function getPoNumber(id: string): string {
 }
 
 /**
+ * Escapes user-profile text for safe embedding in the PDF HTML.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Builds the ship-to block from the business profile. Every field is
+ * optional — missing profile fields are simply omitted instead of breaking
+ * PDF generation. No hardcoded business details remain.
+ */
+function generateShipToHtml(business: BusinessProfile | null): string {
+  const name = business?.name?.trim();
+  const street = (business?.deliveryAddress?.trim() || business?.address?.trim() || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+  const phone = business?.phone?.trim();
+
+  const lines: string[] = [];
+  if (name) lines.push(`<div><strong>${escapeHtml(name)}</strong></div>`);
+  for (const line of street) lines.push(`<div>${escapeHtml(line)}</div>`);
+  if (phone) lines.push(`<div>Phone: ${escapeHtml(phone)}</div>`);
+
+  // Truly empty profile: show a neutral placeholder rather than wrong data.
+  if (lines.length === 0) {
+    return '<div><em>Delivery address — complete your business profile in Settings.</em></div>';
+  }
+  return lines.join('\n');
+}
+
+/**
  * HTML template used by expo-print to produce a real PDF on native, and by
  * the browser print dialog on web.
+ *
+ * Chapter 2: the buyer block comes from the authenticated user's business
+ * profile (fetched via the cached profile service). When no profile exists
+ * or fields are missing, the PDF still generates with graceful fallbacks —
+ * one customer's business details are never shown for another.
  */
-function generatePurchaseOrderHTML(poData: POData): string {
+function generatePurchaseOrderHTML(poData: POData, business: BusinessProfile | null): string {
   const poNumber = getPoNumber(poData.id);
   const orderDate = formatDate(new Date(poData.date));
   const totalItems = poData.items.reduce((sum, item) => sum + item.quantity, 0);
+  const companyName = business?.name?.trim();
 
   const itemsRows = poData.items.map((item, index) => `
     <tr style="${index % 2 === 1 ? 'background-color: #f8f8f8;' : ''}">
@@ -73,7 +117,7 @@ function generatePurchaseOrderHTML(poData: POData): string {
     </head>
     <body>
       <div class="header">
-        <div class="company-name">LIFESTYLE WINDOWS</div>
+        ${companyName ? `<div class="company-name">${escapeHtml(companyName.toUpperCase())}</div>` : ''}
         <div class="po-title">PURCHASE ORDER</div>
       </div>
       <div class="order-details">
@@ -90,11 +134,7 @@ function generatePurchaseOrderHTML(poData: POData): string {
       </div>
       <div class="ship-to">
         <div class="section-title">Ship to:</div>
-        <div>Lifestyle Windows</div>
-        <div>14-16 Link Crescent</div>
-        <div>Coolum Beach 4573</div>
-        <div>Phone: 5351 1858</div>
-        <div>Fax: 5351 1903</div>
+        ${generateShipToHtml(business)}
       </div>
       <div class="shipping-details">
         <div><strong>Shipping Method:</strong> Road Transport</div>
@@ -132,7 +172,10 @@ function generatePurchaseOrderHTML(poData: POData): string {
  * has its own web fallback that does not depend on this URL being a PDF.
  */
 export async function generatePurchaseOrderPDF(poData: POData): Promise<string> {
-  const htmlContent = generatePurchaseOrderHTML(poData);
+  // Chapter 2: buyer details come from the signed-in user's business profile.
+  // Never throws — missing/failing profiles degrade gracefully.
+  const business = await getCachedBusinessProfile();
+  const htmlContent = generatePurchaseOrderHTML(poData, business);
 
   if (Platform.OS === 'web') {
     const blob = new Blob([htmlContent], { type: 'text/html' });

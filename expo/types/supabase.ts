@@ -13,18 +13,99 @@ export interface Database {
         Row: {
           id: string
           email: string
+          business_id: string | null
+          role: string
           created_at: string
           updated_at: string
         }
         Insert: {
           id: string
           email: string
+          business_id?: string | null
+          role?: string
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
           email?: string
+          business_id?: string | null
+          role?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      businesses: {
+        Row: {
+          id: string
+          name: string
+          contact_email: string
+          phone: string
+          address: string
+          delivery_address: string
+          logo_url: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name?: string
+          contact_email?: string
+          phone?: string
+          address?: string
+          delivery_address?: string
+          logo_url?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          contact_email?: string
+          phone?: string
+          address?: string
+          delivery_address?: string
+          logo_url?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      suppliers: {
+        Row: {
+          id: string
+          business_id: string
+          name: string
+          ordering_email: string
+          phone: string
+          contact_person: string
+          address: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          name?: string
+          ordering_email?: string
+          phone?: string
+          contact_person?: string
+          address?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          name?: string
+          ordering_email?: string
+          phone?: string
+          contact_person?: string
+          address?: string
           created_at?: string
           updated_at?: string
         }
@@ -43,6 +124,8 @@ export interface Database {
           category: string
           supplier: string
           supplier_email: string | null
+          supplier_id: string | null
+          business_id: string | null
           min_stock: number
           current_stock: number
           unit: string
@@ -63,6 +146,8 @@ export interface Database {
           category: string
           supplier: string
           supplier_email?: string | null
+          supplier_id?: string | null
+          business_id?: string | null
           min_stock: number
           current_stock: number
           unit: string
@@ -83,6 +168,8 @@ export interface Database {
           category?: string
           supplier?: string
           supplier_email?: string | null
+          supplier_id?: string | null
+          business_id?: string | null
           min_stock?: number
           current_stock?: number
           unit?: string
@@ -108,6 +195,8 @@ export interface Database {
           supplier_id: string
           supplier_name: string
           supplier_email: string | null
+          supplier_record_id: string | null
+          business_id: string | null
           date: string
           status: 'draft' | 'submitted' | 'received'
           notes: string | null
@@ -120,6 +209,8 @@ export interface Database {
           supplier_id: string
           supplier_name: string
           supplier_email?: string | null
+          supplier_record_id?: string | null
+          business_id?: string | null
           date: string
           status?: 'draft' | 'submitted' | 'received'
           notes?: string | null
@@ -132,6 +223,8 @@ export interface Database {
           supplier_id?: string
           supplier_name?: string
           supplier_email?: string | null
+          supplier_record_id?: string | null
+          business_id?: string | null
           date?: string
           status?: 'draft' | 'submitted' | 'received'
           notes?: string | null
@@ -330,7 +423,10 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      claim_my_business: {
+        Args: { p_business_id: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

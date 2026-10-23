@@ -2,7 +2,8 @@ import { Linking, Alert, Platform } from 'react-native';
 import * as MailComposer from 'expo-mail-composer';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
-import { PurchaseOrder } from '@/types/inventory';
+import { PurchaseOrder, BusinessProfile } from '@/types/inventory';
+import { getCachedBusinessProfile } from './businessProfileService';
 import { generatePurchaseOrderPDF, POData, getPoNumber } from './pdfService';
 
 /**
@@ -39,7 +40,27 @@ async function copyPdfForAttachment(
   return destUri;
 }
 
-export function formatPurchaseOrderEmail(purchaseOrder: PurchaseOrder): {
+/**
+ * Builds the sender signature from the signed-in user's business profile.
+ * Every field is optional — missing profile fields are omitted instead of
+ * breaking the email. Never shows one customer's details to another.
+ */
+function businessSignature(business: BusinessProfile | null): string {
+  if (!business) return '';
+  const name = business.name?.trim();
+  const street = business.deliveryAddress?.trim() || business.address?.trim() || '';
+  const phone = business.phone?.trim();
+  const lines: string[] = [];
+  if (name) lines.push(name);
+  if (street) lines.push(street.replace(/\n+/g, ', '));
+  if (phone) lines.push(`Phone: ${phone}`);
+  return lines.length ? `\n\n${lines.join('\n')}` : '';
+}
+
+export function formatPurchaseOrderEmail(
+  purchaseOrder: PurchaseOrder,
+  business?: BusinessProfile | null,
+): {
   subject: string;
   body: string;
 } {
@@ -63,10 +84,7 @@ ITEMS ORDERED:
 ${itemsTable}
 Total Items: ${totalQuantity}
 
-Best regards,
-Lifestyle Windows
-14-16 Link Crescent, Coolum Beach 4573
-Phone: 5351 1858 | Fax: 5351 1903`;
+Best regards,${businessSignature(business ?? null)}`;
 
   return { subject, body };
 }

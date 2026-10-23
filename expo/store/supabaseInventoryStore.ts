@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Product, OrderItem, StocktakeItem, PurchaseOrder, Supplier } from '@/types/inventory';
+import { Product, OrderItem, StocktakeItem, PurchaseOrder, Supplier, BusinessProfile } from '@/types/inventory';
 import { suppliers as mockSuppliers } from '@/mocks/suppliers';
+import { clearBusinessProfileCache, fetchBusinessProfile } from '@/services/businessProfileService';
 
 /**
  * Derives the supplier list (with emails) from the current product set.
@@ -48,6 +49,16 @@ const isStaleTokenError = (error: unknown): boolean => {
 const STALE_TOKEN_MESSAGE =
   'Your session is out of sync with the server. Please sign in again.';
 
+/** Case/trim-insensitive name key — matches the database's supplier uniqueness rule. */
+const nameKey = (s: string): string => (s || '').trim().toLowerCase();
+
+/** Finds a first-class supplier record matching a supplier TEXT value. */
+function findSupplierRecord(records: Supplier[], name: string): Supplier | undefined {
+  const key = nameKey(name);
+  if (!key) return undefined;
+  return records.find(r => nameKey(r.name) === key);
+}
+
 interface SupabaseInventoryState {
   products: Product[];
   suppliers: Supplier[];
@@ -60,6 +71,13 @@ interface SupabaseInventoryState {
   user: any | null;
   isSupabaseEnabled: boolean;
   lastSyncTime: string | null;
+
+  // Chapter 2 — business profile + first-class supplier records
+  business: BusinessProfile | null;
+  businessLoaded: boolean;
+  businessError: string | null;
+  supplierRecords: Supplier[];
+  supplierRecordsLoading: boolean;
   
   // Auth Management
   setUser: (user: any | null) => void;
@@ -92,6 +110,16 @@ interface SupabaseInventoryState {
   
   // Error Management
   setError: (error: string | null) => void;
+
+  // Chapter 2 — Business profile
+  loadBusiness: () => Promise<void>;
+  createAndClaimBusiness: (name: string, contactEmail: string) => Promise<void>;
+  saveBusinessProfile: (updates: Partial<BusinessProfile>) => Promise<void>;
+
+  // Chapter 2 — Supplier records
+  loadSupplierRecords: () => Promise<void>;
+  saveSupplierRecord: (supplier: Supplier) => Promise<void>;
+  deleteSupplierRecord: (supplierId: string) => Promise<void>;
   
   // Data Management
   clearAllData: () => Promise<void>;
@@ -116,6 +144,12 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
       isSupabaseEnabled: false,
       lastSyncTime: null,
 
+      business: null,
+      businessLoaded: false,
+      businessError: null,
+      supplierRecords: [],
+      supplierRecordsLoading: false,
+
       setUser: (user) => set({ user, isAuthenticated: !!user }),
       
       setAuthenticated: (authenticated) => set({ isAuthenticated: authenticated }),
@@ -137,6 +171,10 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
             // PO Preview screen and history survive logout/login and reopen.
             await get().loadProducts();
             await get().loadPurchaseOrders();
+            // Chapter 2: business profile + supplier records (sequential —
+            // supplier loading uses the loaded business context).
+            await get().loadBusiness();
+            await get().loadSupplierRecords();
           }
         } catch (error) {
           console.error('Error checking auth status:', error);
@@ -147,6 +185,7 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
       signOut: async () => {
         try {
           await signOutFromSupabase();
+          clearBusinessProfileCache();
           set({ 
             user: null, 
             isAuthenticated: false, 
@@ -154,10 +193,135 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
             currentOrderItems: [], 
             currentStocktakeItems: [], 
             purchaseOrders: [],
+            business: null,
+            businessLoaded: false,
+            businessError: null,
+            supplierRecords: [],
             lastSyncTime: null 
           });
         } catch (error) {
           console.error('Error signing out:', error);
+          throw error;
+        }
+      },
+
+      // ------------------------------------------------------------------
+      // Chapter 2 — business profile
+      // ------------------------------------------------------------------
+
+      loadBusiness: async () => {
+        const state = get();
+        if (!state.isSupabaseEnabled || !state.isAuthenticated) {
+          return;
+        }
+        set({ businessError: null });
+        try {
+          const business = await fetchBusinessProfile();
+          set({ business, businessLoaded: true });
+        } catch (error) {
+          console.error('Error loading business profile:', error);
+          if (isStaleTokenError(error)) {
+            set({ error: STALE_TOKEN_MESSAGE, businessLoaded: true });
+            await get().signOut();
+            return;
+          }
+          // Existing users still work without a loaded profile (PDF/email
+          // fall back) — record the error for the profile screen.
+          const msg = error instanceof Error ? error.message : 'Failed to load business profile';
+          set({ businessError: msg, businessLoaded: true });
+        }
+      },
+
+      createAndClaimBusiness: async (name, contactEmail) => {
+        set({ businessError: null });
+        try {
+          const business = await SupabaseService.createAndClaimBusiness(name, contactEmail);
+          clearBusinessProfileCache();
+          set({ business, businessLoaded: true });
+          // The claim RPC backfilled business_id on this user's records
+          // server-side; reload so the UI reflects database truth.
+          await get().loadSupplierRecords();
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Failed to create business';
+          set({ businessError: msg });
+          throw error;
+        }
+      },
+
+      saveBusinessProfile: async (updates) => {
+        const state = get();
+        if (!state.business) {
+          throw new Error('No business profile to save');
+        }
+        set({ businessError: null });
+        try {
+          const updated = await SupabaseService.updateBusinessProfile(state.business.id, updates);
+          clearBusinessProfileCache();
+          set({ business: updated });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Failed to save business profile';
+          set({ businessError: msg });
+          throw error;
+        }
+      },
+
+      // ------------------------------------------------------------------
+      // Chapter 2 — supplier records
+      // ------------------------------------------------------------------
+
+      loadSupplierRecords: async () => {
+        const state = get();
+        if (!state.isSupabaseEnabled || !state.isAuthenticated || !state.business) {
+          return;
+        }
+        set({ supplierRecordsLoading: true });
+        try {
+          const records = await SupabaseService.getSupplierRecords();
+          set({ supplierRecords: records, supplierRecordsLoading: false });
+        } catch (error) {
+          console.error('Error loading supplier records:', error);
+          // Non-fatal: the app falls back to derived suppliers.
+          const msg = error instanceof Error ? error.message : 'Failed to load suppliers';
+          set({ error: msg, supplierRecordsLoading: false });
+        }
+      },
+
+      saveSupplierRecord: async (supplier) => {
+        const state = get();
+        if (!state.business) {
+          throw new Error('Create your business profile first');
+        }
+        set({ supplierRecordsLoading: true });
+        try {
+          const existing = state.supplierRecords.find(r => r.id === supplier.id);
+          const saved = existing
+            ? await SupabaseService.updateSupplierRecord(supplier.id, supplier)
+            : await SupabaseService.createSupplierRecord(state.business.id, supplier);
+
+          const next = existing
+            ? state.supplierRecords.map(r => (r.id === saved.id ? saved : r))
+            : [...state.supplierRecords, saved];
+          set({ supplierRecords: next, supplierRecordsLoading: false });
+
+          // Link matching products to the record (best-effort, TEXT fields
+          // untouched). Runs after the record is stored.
+          await SupabaseService.linkProductsToSupplierRecord(saved.name, saved.id);
+        } catch (error) {
+          set({ supplierRecordsLoading: false });
+          throw error;
+        }
+      },
+
+      deleteSupplierRecord: async (supplierId) => {
+        set({ supplierRecordsLoading: true });
+        try {
+          await SupabaseService.deleteSupplierRecord(supplierId);
+          set((state) => ({
+            supplierRecords: state.supplierRecords.filter(r => r.id !== supplierId),
+            supplierRecordsLoading: false,
+          }));
+        } catch (error) {
+          set({ supplierRecordsLoading: false });
           throw error;
         }
       },
@@ -201,7 +365,13 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         if (state.isSupabaseEnabled && state.isAuthenticated) {
           set({ isLoading: true, error: null });
           try {
-            const createdProduct = await SupabaseService.createProduct(product);
+            // Chapter 2: link the product to a supplier record when the TEXT
+            // matches (case/trim-insensitive).
+            const withLink = {
+              ...product,
+              supplierId: findSupplierRecord(state.supplierRecords, product.supplier)?.id,
+            };
+            const createdProduct = await SupabaseService.createProduct(withLink);
             set((state) => {
               const next = [...state.products, createdProduct];
               return {
@@ -235,7 +405,15 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         if (state.isSupabaseEnabled && state.isAuthenticated) {
           set({ isLoading: true, error: null });
           try {
-            const updated = await SupabaseService.updateProduct(productId, updatedProduct);
+            // Chapter 2: resolve the supplier record link whenever the
+            // supplier TEXT changed (unmatched name clears the link).
+            const updatesWithLink = {
+              ...updatedProduct,
+              ...(updatedProduct.supplier !== undefined
+                ? { supplierId: findSupplierRecord(state.supplierRecords, updatedProduct.supplier)?.id ?? null }
+                : {}),
+            };
+            const updated = await SupabaseService.updateProduct(productId, updatesWithLink);
             set((state) => {
               const next = state.products.map(product =>
                 product.id === productId ? updated : product
@@ -276,7 +454,12 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         if (state.isSupabaseEnabled && state.isAuthenticated) {
           set({ isLoading: true, error: null });
           try {
-            await SupabaseService.bulkCreateProducts(products);
+            // Chapter 2: resolve supplier record links for imported products.
+            const withLinks = products.map(p => ({
+              ...p,
+              supplierId: findSupplierRecord(state.supplierRecords, p.supplier)?.id,
+            }));
+            await SupabaseService.bulkCreateProducts(withLinks);
             await get().loadProducts(); // Reload from database
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to import products';
@@ -390,22 +573,28 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           // Create separate purchase orders for each supplier
           const newOrders: PurchaseOrder[] = Object.entries(itemsBySupplier).map(([supplierName, items]) => {
             const supplier = state.suppliers.find(s => s.name === supplierName);
-            
+            // Chapter 2: prefer the first-class supplier record when one
+            // matches the supplier TEXT (case/trim-insensitive).
+            const record = findSupplierRecord(state.supplierRecords, supplierName);
+
             return {
               id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
               supplierId: supplier?.id || 'unknown',
               supplierName,
+              supplierRecordId: record?.id,
               date: new Date().toISOString(),
               items,
               status: 'submitted' as const
             };
           });
           
-          // Attach supplier_email snapshot from the current supplier list so
-          // historical orders retain the address used at submission time.
+          // Attach supplier_email snapshot so historical orders retain the
+          // address used at submission time. The supplier record's ordering
+          // email wins over the value derived from product text.
           for (const o of newOrders) {
+            const record = findSupplierRecord(state.supplierRecords, o.supplierName);
             const sup = state.suppliers.find(s => s.name === o.supplierName);
-            o.supplierEmail = sup?.email || undefined;
+            o.supplierEmail = record?.email || sup?.email || undefined;
           }
 
           // Submit to Supabase if available, then reload from Supabase so the
@@ -592,12 +781,20 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           if (event === 'SIGNED_IN' && user) {
             await get().loadProducts();
             await get().loadPurchaseOrders();
+            // Chapter 2: profile + supplier records, awaited in order.
+            await get().loadBusiness();
+            await get().loadSupplierRecords();
           } else if (event === 'SIGNED_OUT') {
+            clearBusinessProfileCache();
             set({ 
               products: [], 
               currentOrderItems: [], 
               currentStocktakeItems: [], 
               purchaseOrders: [],
+              business: null,
+              businessLoaded: false,
+              businessError: null,
+              supplierRecords: [],
               lastSyncTime: null 
             });
           }

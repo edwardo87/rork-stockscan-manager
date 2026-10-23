@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Info, Wrench, FileText, BookOpen, Trash2 } from 'lucide-react-native';
+import { Info, Wrench, FileText, BookOpen, Trash2, Building2, Truck } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { useInventoryStore } from '@/store/inventoryStore';
@@ -188,6 +188,45 @@ export default function SettingsScreen() {
       </View>
 
 
+
+      {/* Business & Suppliers (Chapter 2) */}
+      <View style={[styles.section, { backgroundColor: colors.background }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Business & Suppliers</Text>
+
+        <TouchableOpacity
+          style={[styles.settingRow, { borderTopColor: colors.border }]}
+          onPress={() => router.push('/business-profile')}
+        >
+          <View style={styles.settingInfo}>
+            <Building2 size={22} color={colors.text} style={styles.settingIcon} />
+            <View>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>
+                Business Profile
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                Your business name, contact and delivery details
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.settingRow, { borderTopColor: colors.border }]}
+          onPress={() => router.push('/suppliers')}
+        >
+          <View style={styles.settingInfo}>
+            <Truck size={22} color={colors.text} style={styles.settingIcon} />
+            <View>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>
+                Suppliers
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                Manage supplier contacts and ordering emails
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
 
       {/* Help & About Section */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>

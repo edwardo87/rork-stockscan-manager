@@ -41,7 +41,18 @@ export default function EditProductScreen() {
   };
 
   const handleAddToOrder = () => {
-    addToOrder(product, orderQuantity);
+    // Chapter 3: the entered quantity is in ORDER units; merge the edited
+    // purchasing fields into the product snapshot used for the order item.
+    const effectiveProduct: Product = {
+      ...product,
+      ...formData,
+      unitsPerOrderUnit:
+        Number(formData.unitsPerOrderUnit) > 0 ? Number(formData.unitsPerOrderUnit) : 1,
+      purchasePrice: Number(formData.purchasePrice) > 0 ? Number(formData.purchasePrice) : undefined,
+      priceBasisQuantity: Number(formData.priceBasisQuantity) > 0 ? Number(formData.priceBasisQuantity) : 1,
+      priceBasisUnit: formData.priceBasisUnit?.trim() || formData.stockUnit?.trim() || formData.unit?.trim() || 'each',
+    };
+    addToOrder(effectiveProduct, orderQuantity);
     router.replace('/');
   };
 
@@ -170,15 +181,18 @@ export default function EditProductScreen() {
               </View>
 
               <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-                <Text style={[styles.label, { color: colors.text }]}>Unit</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Stock unit</Text>
                 <TextInput
                   style={[styles.input, { 
                     color: colors.text,
                     backgroundColor: colors.lightGray,
                     borderColor: colors.border
                   }]}
-                  value={formData.unit}
-                  onChangeText={(value) => updateField('unit', value)}
+                  value={formData.stockUnit ?? formData.unit}
+                  onChangeText={(value) => {
+                    updateField('stockUnit', value);
+                    updateField('unit', value); // legacy field kept in sync
+                  }}
                   placeholder="each"
                   placeholderTextColor={colors.inactive}
                 />
@@ -216,6 +230,111 @@ export default function EditProductScreen() {
                   placeholder="0.00"
                   placeholderTextColor={colors.inactive}
                 />
+              </View>
+            </View>
+
+            {/* Chapter 3 — purchasing fields (dedicated, never overloaded) */}
+            <View style={[styles.actionsSection, { borderTopColor: colors.border }]}>
+              <Text style={[styles.actionTitle, { color: colors.text }]}>Purchasing</Text>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.label, { color: colors.text }]}>Supplier code</Text>
+                  <TextInput
+                    style={[styles.input, { 
+                      color: colors.text,
+                      backgroundColor: colors.lightGray,
+                      borderColor: colors.border
+                    }]}
+                    value={formData.supplierCode ?? ''}
+                    onChangeText={(value) => updateField('supplierCode', value)}
+                    placeholder="e.g. FS-8G50"
+                    placeholderTextColor={colors.inactive}
+                    autoCapitalize="characters"
+                  />
+                </View>
+
+                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={[styles.label, { color: colors.text }]}>Order unit</Text>
+                  <TextInput
+                    style={[styles.input, { 
+                      color: colors.text,
+                      backgroundColor: colors.lightGray,
+                      borderColor: colors.border
+                    }]}
+                    value={formData.orderUnit ?? ''}
+                    onChangeText={(value) => updateField('orderUnit', value)}
+                    placeholder="e.g. box of 1,000"
+                    placeholderTextColor={colors.inactive}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.label, { color: colors.text }]}>Units per order unit</Text>
+                  <TextInput
+                    style={[styles.input, { 
+                      color: colors.text,
+                      backgroundColor: colors.lightGray,
+                      borderColor: colors.border
+                    }]}
+                    value={formData.unitsPerOrderUnit?.toString() ?? ''}
+                    onChangeText={(value) => updateField('unitsPerOrderUnit', parseFloat(value) || 0)}
+                    keyboardType="numeric"
+                    placeholder="1000"
+                    placeholderTextColor={colors.inactive}
+                  />
+                </View>
+
+                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={[styles.label, { color: colors.text }]}>Purchase price (ex GST)</Text>
+                  <TextInput
+                    style={[styles.input, { 
+                      color: colors.text,
+                      backgroundColor: colors.lightGray,
+                      borderColor: colors.border
+                    }]}
+                    value={formData.purchasePrice?.toString() ?? ''}
+                    onChangeText={(value) => updateField('purchasePrice', parseFloat(value) || 0)}
+                    keyboardType="numeric"
+                    placeholder="0.00"
+                    placeholderTextColor={colors.inactive}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.label, { color: colors.text }]}>Price-basis quantity</Text>
+                  <TextInput
+                    style={[styles.input, { 
+                      color: colors.text,
+                      backgroundColor: colors.lightGray,
+                      borderColor: colors.border
+                    }]}
+                    value={formData.priceBasisQuantity?.toString() ?? ''}
+                    onChangeText={(value) => updateField('priceBasisQuantity', parseFloat(value) || 0)}
+                    keyboardType="numeric"
+                    placeholder="100"
+                    placeholderTextColor={colors.inactive}
+                  />
+                </View>
+
+                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={[styles.label, { color: colors.text }]}>Price-basis unit</Text>
+                  <TextInput
+                    style={[styles.input, { 
+                      color: colors.text,
+                      backgroundColor: colors.lightGray,
+                      borderColor: colors.border
+                    }]}
+                    value={formData.priceBasisUnit ?? ''}
+                    onChangeText={(value) => updateField('priceBasisUnit', value)}
+                    placeholder="each, m…"
+                    placeholderTextColor={colors.inactive}
+                  />
+                </View>
               </View>
             </View>
 

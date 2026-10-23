@@ -41,11 +41,35 @@ const columnMapping: Record<string, string | string[]> = {
   'minstock': 'minStock',
   'reorder_level': 'minStock',
   'unit': 'unit',
-  'pack_size': 'unit',
+  // Chapter 3 — dedicated purchasing fields (never overloaded onto `unit`).
+  'supplier_code': 'supplierCode',
+  'suppliercode': 'supplierCode',
+  'supplier_product_code': 'supplierCode',
+  'supplier_item_code': 'supplierCode',
+  'stock_unit': 'stockUnit',
+  'stockunit': 'stockUnit',
+  'order_unit': 'orderUnit',
+  'orderunit': 'orderUnit',
+  'ordering_unit': 'orderUnit',
+  'units_per_order_unit': 'unitsPerOrderUnit',
+  'unitsperorderunit': 'unitsPerOrderUnit',
+  'pack_quantity': 'unitsPerOrderUnit',
+  'pack_qty': 'unitsPerOrderUnit',
+  'units_per_pack': 'unitsPerOrderUnit',
+  'purchase_price': 'purchasePrice',
+  'purchaseprice': 'purchasePrice',
+  'purchase_price_ex_gst': 'purchasePrice',
+  'price_ex_gst': 'purchasePrice',
+  'price_basis_quantity': 'priceBasisQuantity',
+  'price_basis_qty': 'priceBasisQuantity',
+  'price_basis_unit': 'priceBasisUnit',
   // Legacy / alternative
   'item_description': ['name', 'description'],
   'itemcode': 'sku',
   'last_ordered': 'lastOrdered',
+  // NOTE: 'pack_size' is deliberately NOT mapped to `unit` any more — that
+  // overload hid pack quantities inside a stock-unit field. Pack-style values
+  // belong in units_per_order_unit / pack_quantity above.
 };
 
 export interface CSVImportResult {
@@ -214,6 +238,16 @@ export function parseCSVWithSummary(csvContent: string): CSVImportResult {
         const cleanedNum = value.replace(/[^0-9.\-]/g, '');
         const n = parseFloat(cleanedNum);
         draft[mapping] = Number.isFinite(n) ? n : 0;
+      } else if (['unitsPerOrderUnit', 'priceBasisQuantity'].includes(mapping)) {
+        // Pack quantities / price bases may include units ("100 pcs") — take
+        // the leading number; unparseable values are ignored rather than 0.
+        const cleanedNum = value.replace(/[^0-9.]/g, '');
+        const n = parseFloat(cleanedNum);
+        if (Number.isFinite(n) && n > 0) draft[mapping] = n;
+      } else if (mapping === 'purchasePrice') {
+        const cleanedNum = value.replace(/[^0-9.\-]/g, '');
+        const n = parseFloat(cleanedNum);
+        if (Number.isFinite(n) && n > 0) draft[mapping] = n;
       } else {
         draft[mapping] = value;
       }
@@ -245,6 +279,14 @@ export function parseCSVWithSummary(csvContent: string): CSVImportResult {
       currentStock: (draft.currentStock as number | undefined) || 0,
       minStock: (draft.minStock as number | undefined) || 0,
       unit: (draft.unit as string | undefined) || 'each',
+      // ---- Chapter 3 purchasing fields (all optional; absent = unset) ----
+      supplierCode: (draft.supplierCode as string | undefined)?.trim() || undefined,
+      stockUnit: (draft.stockUnit as string | undefined)?.trim() || undefined,
+      orderUnit: (draft.orderUnit as string | undefined)?.trim() || undefined,
+      unitsPerOrderUnit: (draft.unitsPerOrderUnit as number | undefined) || undefined,
+      purchasePrice: (draft.purchasePrice as number | undefined) || undefined,
+      priceBasisQuantity: (draft.priceBasisQuantity as number | undefined) || undefined,
+      priceBasisUnit: (draft.priceBasisUnit as string | undefined)?.trim() || undefined,
       lastOrdered: (draft.lastOrdered as string | undefined) || undefined,
     };
 
@@ -305,12 +347,189 @@ export function generateCSVTemplate(): string {
   const headers = [
     'name', 'description', 'sku', 'barcode', 'category', 'supplier', 'supplier_email',
     'cost', 'price', 'current_stock', 'min_stock', 'unit',
+    // Chapter 3 purchasing columns (all optional)
+    'supplier_code', 'stock_unit', 'order_unit', 'units_per_order_unit',
+    'purchase_price', 'price_basis_quantity', 'price_basis_unit',
   ];
 
   const sampleData = [
-    ['Sample Product 1', 'This is a sample product description', 'SAMP001', '1234567890123', 'Electronics', 'Sample Supplier Ltd', 'orders@samplesupplier.com', '10.50', '15.99', '25', '5', 'each'],
-    ['Sample Product 2', 'Another sample product', 'SAMP002', '1234567890124', 'Office Supplies', 'Office Supply Co', 'sales@officesupply.co', '2.25', '3.99', '100', '10', 'pack'],
+    // Screws: counted individually, ordered by 1,000, priced per 100.
+    ['Countersunk Screw 8g x 50mm', 'Zinc countersunk screws', 'SCREW8G', '1234567890123', 'Fasteners', 'Fastener Supplies', 'orders@fastenersupplies.com', '10.50', '15.99', '2500', '1000', 'each', 'FS-8G50', 'each', 'box of 1,000', '1000', '12.50', '100', 'each'],
+    // Silicone: counted by cartridge, ordered in cartons of 12, priced per cartridge.
+    ['Silicone Clear 300ml', 'Neutral cure silicone cartridge', 'SIL300', '1234567890124', 'Sealants', 'Seal Supply Co', 'sales@sealsupply.co', '4.20', '7.50', '24', '6', 'cartridge', 'SS-C300', 'cartridge', 'carton of 12', '12', '4.20', '1', 'cartridge'],
   ];
 
   return [headers.join(','), ...sampleData.map(row => row.join(','))].join('\n');
+}
+
+// ============================================================================
+// Chapter 3 — import matching and duplicate protection
+// ============================================================================
+
+export interface ImportMatchOutcome {
+  /** Rows that are genuinely new and safe to insert. */
+  toAdd: Product[];
+  /** Rows skipped because an identical product already exists. */
+  duplicates: number;
+  /** Rows skipped because the match conflicts with the existing record. */
+  conflicts: number;
+  /** Human-readable skip reasons (one per skipped row). */
+  details: string[];
+}
+
+const norm = (s: string | undefined): string => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** Two values differ meaningfully (numbers compared to the cent / 4th decimal). */
+function differs(a: number | undefined, b: number | undefined): boolean {
+  if (a === undefined && b === undefined) return false;
+  if (a === undefined || b === undefined) return true;
+  return Math.abs(a - b) > 0.0001;
+}
+
+function textDiffers(a: string | undefined, b: string | undefined): boolean {
+  return norm(a || undefined) !== norm(b || undefined);
+}
+
+/**
+ * Classifies incoming catalogue rows against existing products so repeated
+ * supplier imports can never silently duplicate the catalogue:
+ *
+ *  - identity match: barcode (when the row has one) else normalised name;
+ *  - row with identical meaning to the existing product → DUPLICATE (skipped);
+ *  - row matching a product but carrying conflicting data (supplier, code,
+ *    units, prices…) → CONFLICT (skipped and reported — never overwritten);
+ *  - no match → NEW (imported).
+ *
+ * Unspecified/derived fields (default 'each', 'Unknown Supplier', generated
+ * barcodes, zero prices) are treated as "not provided" so they cannot cause
+ * false conflicts. Existing records are NEVER modified.
+ */
+export function matchProductsForImport(existing: Product[], incoming: Product[]): ImportMatchOutcome {
+  const outcome: ImportMatchOutcome = { toAdd: [], duplicates: 0, conflicts: 0, details: [] };
+
+  // Keys of products already in the catalogue. A value of `null` marks an
+  // AMBIGUOUS key (two or more existing products share it) — matching by such
+  // a key must not pick a wrong product, so it falls through to conflict
+  // handling rather than silently matching one of them.
+  const barcodeKeys = new Map<string, Product | null>();
+  const nameKeys = new Map<string, Product | null>();
+  for (const p of existing) {
+    const bc = norm(p.barcode);
+    if (bc) barcodeKeys.set(bc, barcodeKeys.has(bc) ? null : p);
+    const nk = norm(p.name);
+    if (nk) nameKeys.set(nk, nameKeys.has(nk) ? null : p);
+  }
+
+  // Keys seen so far in this import batch (in-file duplicates too).
+  const seenKeys = new Set<string>();
+
+  const keyOf = (p: Product): string | null => {
+    const bc = norm(p.barcode);
+    if (bc) return `bc:${bc}`;
+    const nk = norm(p.name);
+    return nk ? `nm:${nk}` : null;
+  };
+
+  for (const row of incoming) {
+    const bc = norm(row.barcode);
+    const nk = norm(row.name);
+
+    // A row that provides a barcode is only trusted against the catalogue
+    // when that barcode exists; otherwise fall back to the name.
+    let match: Product | undefined;
+    let matchReason = '';
+    let ambiguous = false;
+    if (bc && barcodeKeys.has(bc)) {
+      const found = barcodeKeys.get(bc);
+      if (found) {
+        match = found;
+        matchReason = `barcode ${row.barcode}`;
+      } else {
+        // Two or more catalogue products share this barcode — refuse to guess.
+        ambiguous = true;
+      }
+    }
+    if (!match && !ambiguous && nk && nameKeys.has(nk)) {
+      const found = nameKeys.get(nk);
+      if (found) {
+        match = found;
+        matchReason = `name "${row.name}"`;
+      } else {
+        // Duplicate catalogue names — refuse to guess.
+        ambiguous = true;
+      }
+    }
+
+    if (ambiguous) {
+      outcome.conflicts++;
+      outcome.details.push(
+        `"${row.name}": multiple existing products share the same barcode/name — skipped, review manually.`,
+      );
+      continue;
+    }
+
+    if (!match) {
+      const key = keyOf(row);
+      if (key && seenKeys.has(key)) {
+        outcome.duplicates++;
+        outcome.details.push(`"${row.name}": repeated within the import file — skipped.`);
+      } else {
+        if (key) seenKeys.add(key);
+        outcome.toAdd.push(row);
+      }
+      continue;
+    }
+
+    // An imported row that carries its own barcode while matching by name is
+    // ambiguous when the barcodes differ — could be a different real product.
+    if (bc && nk && nameKeys.has(nk) && !barcodeKeys.has(bc) && norm(match.barcode)) {
+      outcome.conflicts++;
+      outcome.details.push(
+        `"${row.name}": name matches an existing product but barcode ${row.barcode} differs (${matchReason}) — skipped, review manually.`,
+      );
+      continue;
+    }
+
+    const conflictReasons: string[] = [];
+
+    // Only provided/meaningful values can conflict.
+    if (row.supplier && row.supplier !== 'Unknown Supplier' && textDiffers(row.supplier, match.supplier)) {
+      conflictReasons.push(`supplier ("${row.supplier}" vs "${match.supplier}")`);
+    }
+    if (row.supplierCode && textDiffers(row.supplierCode, match.supplierCode)) {
+      conflictReasons.push(`supplier code ("${row.supplierCode}" vs "${match.supplierCode ?? 'none'}")`);
+    }
+    if (row.stockUnit && textDiffers(row.stockUnit, match.stockUnit || match.unit)) {
+      conflictReasons.push(`stock unit ("${row.stockUnit}" vs "${match.stockUnit || match.unit}")`);
+    }
+    if (row.unit && row.unit !== 'each' && !row.stockUnit && textDiffers(row.unit, match.stockUnit || match.unit)) {
+      conflictReasons.push(`stock unit ("${row.unit}" vs "${match.stockUnit || match.unit}")`);
+    }
+    if (row.orderUnit && textDiffers(row.orderUnit, match.orderUnit)) {
+      conflictReasons.push(`order unit ("${row.orderUnit}" vs "${match.orderUnit ?? 'none'}")`);
+    }
+    if (row.unitsPerOrderUnit !== undefined && differs(row.unitsPerOrderUnit, match.unitsPerOrderUnit)) {
+      conflictReasons.push(`pack quantity (${row.unitsPerOrderUnit} vs ${match.unitsPerOrderUnit ?? '1'})`);
+    }
+    if (row.purchasePrice !== undefined && differs(row.purchasePrice, match.purchasePrice)) {
+      conflictReasons.push(`purchase price ($${row.purchasePrice} vs $${match.purchasePrice ?? 'none'})`);
+    }
+    if (row.priceBasisQuantity !== undefined && differs(row.priceBasisQuantity, match.priceBasisQuantity)) {
+      conflictReasons.push(`price basis quantity (${row.priceBasisQuantity} vs ${match.priceBasisQuantity ?? '1'})`);
+    }
+    if (row.priceBasisUnit && textDiffers(row.priceBasisUnit, match.priceBasisUnit)) {
+      conflictReasons.push(`price basis unit ("${row.priceBasisUnit}" vs "${match.priceBasisUnit ?? 'none'}")`);
+    }
+
+    if (conflictReasons.length > 0) {
+      outcome.conflicts++;
+      outcome.details.push(`"${row.name}": matches existing product by ${matchReason} but differs in ${conflictReasons.join(', ')} — skipped, review manually.`);
+      continue;
+    }
+
+    outcome.duplicates++;
+    outcome.details.push(`"${row.name}": already exists (${matchReason}) — skipped as duplicate.`);
+  }
+
+  return outcome;
 }

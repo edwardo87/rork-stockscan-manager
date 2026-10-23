@@ -7,6 +7,8 @@ import { useThemeStore } from '@/store/themeStore';
 import Scanner from '@/components/Scanner';
 import OrderItemCard from '@/components/OrderItemCard';
 import EmptyState from '@/components/EmptyState';
+import { buildOrderItem, formatOrderQuantity } from '@/utils/purchasing';
+import { OrderItem } from '@/types/inventory';
 
 export default function OrderScreen() {
   const router = useRouter();
@@ -32,10 +34,14 @@ export default function OrderScreen() {
     
     if (product) {
       addToOrder(product, finalQuantity);
-      // Show success feedback
+      // Show success feedback — Chapter 3: quantity is in ORDER units, with
+      // the stock-unit equivalent spelled out for pack-ordered products.
+      const preview: OrderItem = buildOrderItem(product, finalQuantity);
+      const qty = formatOrderQuantity(preview, finalQuantity);
+      const qtyText = qty.stockEquivalent ? `${qty.main} ${qty.stockEquivalent}` : qty.main;
       Alert.alert(
         "Product Added",
-        `Added ${finalQuantity} ${product.name} to order`,
+        `Added ${qtyText} of ${product.name} to order`,
         [{ text: "OK" }]
       );
     } else {

@@ -23,6 +23,14 @@ export default function AddProductScreen() {
     currentStock: 0,
     minStock: 0,
     unit: 'each',
+    // ---- Chapter 3 purchasing fields (dedicated — never overloaded) ----
+    supplierCode: '',
+    stockUnit: 'each',
+    orderUnit: '',
+    unitsPerOrderUnit: 1,
+    purchasePrice: 0,
+    priceBasisQuantity: 1,
+    priceBasisUnit: 'each',
   });
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,6 +79,16 @@ export default function AddProductScreen() {
       Alert.alert('Validation Error', 'Minimum stock must be a positive number');
       return false;
     }
+
+    if (formData.unitsPerOrderUnit !== undefined && formData.unitsPerOrderUnit <= 0) {
+      Alert.alert('Validation Error', 'Units per order unit must be a positive number');
+      return false;
+    }
+
+    if (formData.priceBasisQuantity !== undefined && formData.priceBasisQuantity <= 0) {
+      Alert.alert('Validation Error', 'Price-basis quantity must be a positive number');
+      return false;
+    }
     
     // Check if SKU already exists
     const existingSku = products.find(p => p.sku.toLowerCase() === formData.sku?.toLowerCase());
@@ -88,6 +106,7 @@ export default function AddProductScreen() {
     setIsSubmitting(true);
     
     try {
+      const stockUnit = formData.stockUnit?.trim() || formData.unit?.trim() || 'each';
       const newProduct: Product = {
         id: generateId(),
         name: formData.name!.trim(),
@@ -100,7 +119,15 @@ export default function AddProductScreen() {
         cost: Number(formData.cost),
         currentStock: Number(formData.currentStock),
         minStock: Number(formData.minStock),
-        unit: formData.unit || 'each',
+        unit: stockUnit, // legacy field kept in sync with stockUnit
+        // ---- Chapter 3 ----
+        stockUnit,
+        supplierCode: formData.supplierCode?.trim() || undefined,
+        orderUnit: formData.orderUnit?.trim() || undefined,
+        unitsPerOrderUnit: Number(formData.unitsPerOrderUnit) > 0 ? Number(formData.unitsPerOrderUnit) : 1,
+        purchasePrice: Number(formData.purchasePrice) > 0 ? Number(formData.purchasePrice) : undefined,
+        priceBasisQuantity: Number(formData.priceBasisQuantity) > 0 ? Number(formData.priceBasisQuantity) : 1,
+        priceBasisUnit: formData.priceBasisUnit?.trim() || stockUnit,
       };
       
       addProduct(newProduct);
@@ -295,14 +322,99 @@ export default function AddProductScreen() {
           </View>
           
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text }]}>Unit</Text>
+            <Text style={[styles.label, { color: colors.text }]}>Stock unit</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
-              value={formData.unit}
-              onChangeText={(value) => handleInputChange('unit', value)}
-              placeholder="each"
+              value={formData.stockUnit ?? formData.unit}
+              onChangeText={(value) => {
+                handleInputChange('stockUnit', value);
+                handleInputChange('unit', value); // legacy field kept in sync
+                if (!formData.priceBasisUnit) handleInputChange('priceBasisUnit', value);
+              }}
+              placeholder="each, cartridge, m…"
               placeholderTextColor={colors.inactive}
             />
+          </View>
+        </View>
+        
+        <View style={[styles.section, { backgroundColor: colors.background }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Purchasing (optional)</Text>
+          <Text style={[styles.sectionHint, { color: colors.inactive }]}>How you buy this product from the supplier — used on purchase orders.</Text>
+          
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Supplier code</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+                value={formData.supplierCode}
+                onChangeText={(value) => handleInputChange('supplierCode', value)}
+                placeholder="e.g. FS-8G50"
+                placeholderTextColor={colors.inactive}
+                autoCapitalize="characters"
+              />
+            </View>
+            
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Order unit</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+                value={formData.orderUnit}
+                onChangeText={(value) => handleInputChange('orderUnit', value)}
+                placeholder="e.g. box of 1,000, carton"
+                placeholderTextColor={colors.inactive}
+              />
+            </View>
+          </View>
+          
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Units per order unit</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+                value={formData.unitsPerOrderUnit?.toString()}
+                onChangeText={(value) => handleInputChange('unitsPerOrderUnit', parseFloat(value) || 0)}
+                placeholder="1000"
+                placeholderTextColor={colors.inactive}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Purchase price (ex GST)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+                value={formData.purchasePrice ? formData.purchasePrice.toString() : ''}
+                onChangeText={(value) => handleInputChange('purchasePrice', parseFloat(value) || 0)}
+                placeholder="0.00"
+                placeholderTextColor={colors.inactive}
+                keyboardType="decimal-pad"
+              />
+            </View>
+          </View>
+          
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Price-basis quantity</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+                value={formData.priceBasisQuantity?.toString()}
+                onChangeText={(value) => handleInputChange('priceBasisQuantity', parseFloat(value) || 0)}
+                placeholder="100"
+                placeholderTextColor={colors.inactive}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={[styles.label, { color: colors.text }]}>Price-basis unit</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.lightGray, color: colors.text, borderColor: colors.border }]}
+                value={formData.priceBasisUnit}
+                onChangeText={(value) => handleInputChange('priceBasisUnit', value)}
+                placeholder="each, m…"
+                placeholderTextColor={colors.inactive}
+              />
+            </View>
           </View>
         </View>
         
@@ -343,6 +455,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  sectionHint: {
+    fontSize: 13,
+    marginBottom: 12,
   },
   inputGroup: {
     marginBottom: 16,

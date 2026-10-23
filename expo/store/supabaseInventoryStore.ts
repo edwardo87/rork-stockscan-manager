@@ -34,6 +34,8 @@ function deriveSuppliersFromProducts(products: Product[]): Supplier[] {
 }
 import { SupabaseService } from '@/services/supabaseService';
 import { supabase, getCurrentUser, isSupabaseConfigured, signOut as signOutFromSupabase } from '@/lib/supabase';
+import { buildOrderItem } from '@/utils/purchasing';
+import { matchProductsForImport, ImportMatchOutcome } from '@/services/csvImportService';
 
 /**
  * Detects Supabase JWT clock-skew errors (PGRST303 "JWT issued at future").
@@ -91,7 +93,7 @@ interface SupabaseInventoryState {
   loadPurchaseOrders: () => Promise<void>;
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (productId: string, updatedProduct: Partial<Product>) => Promise<void>;
-  importProductsFromCSV: (products: Product[]) => Promise<void>;
+  importProductsFromCSV: (products: Product[]) => Promise<ImportMatchOutcome>;
   getProductByBarcode: (barcode: string) => Product | undefined;
   updateProductStock: (productId: string, newStock: number) => Promise<void>;
   
@@ -447,15 +449,24 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         }
       },
       
+      // Chapter 3: imports are matched against the existing catalogue —
+      // genuine new products are added; duplicates and conflicting rows are
+      // skipped and reported. Existing records are never overwritten.
       importProductsFromCSV: async (products) => {
         const state = get();
         console.log(`Importing ${products.length} products from CSV`);
-        
+
+        const outcome = matchProductsForImport(state.products, products);
+
+        if (outcome.toAdd.length === 0) {
+          return outcome; // nothing new to insert
+        }
+
         if (state.isSupabaseEnabled && state.isAuthenticated) {
           set({ isLoading: true, error: null });
           try {
             // Chapter 2: resolve supplier record links for imported products.
-            const withLinks = products.map(p => ({
+            const withLinks = outcome.toAdd.map(p => ({
               ...p,
               supplierId: findSupplierRecord(state.supplierRecords, p.supplier)?.id,
             }));
@@ -467,13 +478,16 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
             throw error;
           }
         } else {
-          // Fallback to local storage
+          // Fallback to local storage — append only the new products.
+          const next = [...state.products, ...outcome.toAdd];
           set({
-            products,
-            suppliers: deriveSuppliersFromProducts(products),
+            products: next,
+            suppliers: deriveSuppliersFromProducts(next),
             lastSyncTime: new Date().toISOString(),
           });
         }
+
+        return outcome;
       },
       
       getProductByBarcode: (barcode) => {
@@ -507,37 +521,44 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         }
       },
 
+      // Chapter 3: `quantity` is in ORDER units (packs, boxes, cartons…).
+      // The item snapshots purchasing details at add time; `quantity` keeps
+      // its stock-unit meaning (order units × pack quantity) purely as an
+      // informational equivalent — ordering never changes physical stock.
       addToOrder: (product, quantity) => set((state) => {
         const existingItem = state.currentOrderItems.find(item => item.productId === product.id);
-        
+        const newItem = buildOrderItem(product, quantity);
+
         if (existingItem) {
+          const combinedQty = (existingItem.orderQuantity ?? existingItem.quantity) + quantity;
+          const combined = buildOrderItem(product, combinedQty);
           return {
             currentOrderItems: state.currentOrderItems.map(item =>
-              item.productId === product.id
-                ? { ...item, quantity: item.quantity + quantity }
-                : item
+              item.productId === product.id ? combined : item
             )
           };
         }
-        
+
         return {
-          currentOrderItems: [
-            ...state.currentOrderItems,
-            {
-              productId: product.id,
-              barcode: product.barcode,
-              name: product.name,
-              quantity,
-              supplier: product.supplier
-            }
-          ]
+          currentOrderItems: [...state.currentOrderItems, newItem]
         };
       }),
 
+      // Chapter 3: quantity is in ORDER units. Purchasing details are
+      // re-snapshotted from the product when available; otherwise the
+      // existing item's own snapshot is preserved.
       updateOrderItemQuantity: (productId, quantity) => set((state) => ({
-        currentOrderItems: state.currentOrderItems.map(item =>
-          item.productId === productId ? { ...item, quantity } : item
-        )
+        currentOrderItems: state.currentOrderItems.map(item => {
+          if (item.productId !== productId) return item;
+          const product = state.products.find(p => p.id === productId);
+          if (product) return buildOrderItem(product, quantity);
+          // Product deleted from the catalogue — keep the order-time snapshot.
+          return {
+            ...item,
+            orderQuantity: quantity,
+            quantity: quantity * (item.unitsPerOrderUnit && item.unitsPerOrderUnit > 0 ? item.unitsPerOrderUnit : 1),
+          };
+        })
       })),
 
       removeFromOrder: (productId) => set((state) => ({

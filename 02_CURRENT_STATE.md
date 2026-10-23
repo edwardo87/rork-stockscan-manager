@@ -30,9 +30,9 @@ Status date: 5 September 2026
 ## Logically incorrect or unsafe
 
 - Submitting a PO immediately adds the ordered quantity to physical stock even though goods have not arrived.
-- CSV import says it replaces the current list, but it inserts additional rows and can create duplicates.
-- No unique constraint prevents duplicate supplier product codes or barcodes.
-- The PO Code column prints the barcode rather than the supplier product code.
+- ~~CSV import says it replaces the current list, but it inserts additional rows and can create duplicates.~~ RESOLVED at the code level 23 Oct 2026 (Chapter 3): repeated imports are matched against the existing catalogue (barcode first, then normalised name); duplicates and conflicts are skipped and reported, never silently re-inserted or overwritten. The alert copy is honest about this. **Note:** matching requires the Chapter 3 columns for full behaviour; it runs against already-loaded products either way.
+- No unique constraint prevents duplicate supplier product codes or barcodes. Partially mitigated at the code level 23 Oct 2026 (Chapter 3): import matching prevents duplicate re-imports. Deliberately NOT a database unique constraint — legacy auto-generated barcodes can collide, and duplicates are resolved by review rather than insert failure.
+- ~~The PO Code column prints the barcode rather than the supplier product code.~~ RESOLVED at the code level 23 Oct 2026 (Chapter 3): POs (PDF, email, preview, Order History) print the supplier code, falling back to the barcode. **Database change pending owner execution.**
 - Help content refers to screens and features that do not exist or uses incorrect navigation paths.
 - Notification toggles persist settings but do not trigger notifications.
 
@@ -68,10 +68,10 @@ This is the largest commercial barrier because it requires the customer to manua
 
 - ~~Records belong directly to an authenticated user, not a business organisation.~~ RESOLVED at the database level 19 Oct 2026 (Chapter 2 migration Revision 4): records belong to a business; app code integration completed 23 Oct 2026.
 - ~~Suppliers are not stored as entities.~~ RESOLVED 23 Oct 2026 (Chapter 2 Stage 4): first-class supplier records with CRUD in the app; legacy supplier TEXT fields on products and historical PO snapshots are preserved during the transition.
-- `unit` is overloaded and can receive `pack_size` values.
-- There is no numeric pack quantity.
-- There is no order unit.
-- There is no price-basis quantity or unit.
+- ~~`unit` is overloaded and can receive `pack_size` values.~~ RESOLVED at the code level 23 Oct 2026 (Chapter 3): the CSV importer no longer maps `pack_size` to `unit`; stock unit and pack quantity are separate dedicated fields. Legacy `unit` values containing digits (e.g. "box of 1,000") are guarded and fall back to "each". **Database change pending owner execution** (`chapter3-migration.sql`).
+- ~~There is no numeric pack quantity.~~ RESOLVED at the code level 23 Oct 2026 (Chapter 3): `units_per_order_unit` records how many stock units one order unit contains (e.g. a "box of 1,000" = 1,000 each). Order quantities are entered and stored in order units; the stock-unit equivalent is always shown. **Database change pending owner execution.**
+- ~~There is no order unit.~~ RESOLVED at the code level 23 Oct 2026 (Chapter 3): products carry `stock_unit` + `order_unit`; purchase orders, PDFs, emails and Order History show supplier code, order-unit quantities and the stock equivalent. **Database change pending owner execution.**
+- ~~There is no price-basis quantity or unit.~~ RESOLVED at the code level 23 Oct 2026 (Chapter 3): `purchase_price` with `price_basis_quantity`/`price_basis_unit` (e.g. $12.50 per 100 each) drives line totals labelled ex GST; products without a price show no line total rather than $0. **Database change pending owner execution.**
 - Current stock is not reliable after a PO because submission inflates it.
 
 ## Proven milestone

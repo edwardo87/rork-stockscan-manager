@@ -129,6 +129,13 @@ export interface Database {
           min_stock: number
           current_stock: number
           unit: string
+          supplier_code: string
+          stock_unit: string
+          order_unit: string
+          units_per_order_unit: number
+          purchase_price: number | null
+          price_basis_quantity: number
+          price_basis_unit: string
           image_url: string | null
           last_ordered: string | null
           created_at: string
@@ -151,6 +158,13 @@ export interface Database {
           min_stock: number
           current_stock: number
           unit: string
+          supplier_code?: string
+          stock_unit?: string
+          order_unit?: string
+          units_per_order_unit?: number
+          purchase_price?: number | null
+          price_basis_quantity?: number
+          price_basis_unit?: string
           image_url?: string | null
           last_ordered?: string | null
           created_at?: string
@@ -173,6 +187,13 @@ export interface Database {
           min_stock?: number
           current_stock?: number
           unit?: string
+          supplier_code?: string
+          stock_unit?: string
+          order_unit?: string
+          units_per_order_unit?: number
+          purchase_price?: number | null
+          price_basis_quantity?: number
+          price_basis_unit?: string
           image_url?: string | null
           last_ordered?: string | null
           created_at?: string
@@ -249,6 +270,14 @@ export interface Database {
           name: string
           quantity: number
           supplier: string
+          supplier_code: string
+          order_unit: string
+          units_per_order_unit: number | null
+          order_quantity: number | null
+          unit_price: number | null
+          price_basis_quantity: number | null
+          price_basis_unit: string
+          line_total: number | null
           created_at: string
         }
         Insert: {
@@ -259,6 +288,14 @@ export interface Database {
           name: string
           quantity: number
           supplier: string
+          supplier_code?: string
+          order_unit?: string
+          units_per_order_unit?: number | null
+          order_quantity?: number | null
+          unit_price?: number | null
+          price_basis_quantity?: number | null
+          price_basis_unit?: string
+          line_total?: number | null
           created_at?: string
         }
         Update: {
@@ -269,6 +306,14 @@ export interface Database {
           name?: string
           quantity?: number
           supplier?: string
+          supplier_code?: string
+          order_unit?: string
+          units_per_order_unit?: number | null
+          order_quantity?: number | null
+          unit_price?: number | null
+          price_basis_quantity?: number | null
+          price_basis_unit?: string
+          line_total?: number | null
           created_at?: string
         }
         Relationships: [

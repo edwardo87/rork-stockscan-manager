@@ -4,6 +4,23 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { formatDate } from '@/utils/dateUtils';
 import { getCachedBusinessProfile } from './businessProfileService';
 import { BusinessProfile } from '@/types/inventory';
+import { formatOrderQuantity, unitPriceLabel } from '@/utils/purchasing';
+
+export interface POItemData {
+  barcode: string;
+  name: string;
+  /** Stock-unit equivalent (informational). */
+  quantity: number;
+  supplier: string;
+  // ---- Chapter 3 purchasing snapshot (optional; absent on legacy rows) ----
+  supplierCode?: string;
+  orderUnit?: string;
+  orderQuantity?: number;
+  unitPrice?: number;
+  priceBasisQuantity?: number;
+  priceBasisUnit?: string;
+  lineTotal?: number;
+}
 
 export interface POData {
   id: string;
@@ -11,12 +28,7 @@ export interface POData {
   /** Supplier email snapshot stored on the PO at submission time. */
   supplierEmail?: string;
   date: string;
-  items: Array<{
-    barcode: string;
-    name: string;
-    quantity: number;
-    supplier: string;
-  }>;
+  items: POItemData[];
   status: string;
 }
 
@@ -81,14 +93,39 @@ function generatePurchaseOrderHTML(poData: POData, business: BusinessProfile | n
   const totalItems = poData.items.reduce((sum, item) => sum + item.quantity, 0);
   const companyName = business?.name?.trim();
 
-  const itemsRows = poData.items.map((item, index) => `
+  // Chapter 3: POs show supplier product codes and order quantities in
+  // purchasing units, with ex-GST pricing when recorded. Rows for legacy
+  // items (no purchasing snapshot) render exactly as before.
+  const itemsRows = poData.items.map((item, index) => {
+    const code = item.supplierCode?.trim() || item.barcode;
+    const qtyText = item.orderQuantity !== undefined
+      ? formatOrderQuantity(item, item.orderQuantity)
+      : null;
+    const quantityCell = qtyText
+      ? `${escapeHtml(qtyText.main)}${qtyText.stockEquivalent ? ` <span style="color:#777;">${escapeHtml(qtyText.stockEquivalent)}</span>` : ''}`
+      : String(item.quantity);
+    const priceLabel = item.unitPrice !== undefined ? unitPriceLabel(item) : null;
+    const priceCell = priceLabel ? escapeHtml(priceLabel) : '';
+    const lineTotalCell =
+      item.lineTotal !== undefined && item.lineTotal !== null
+        ? `$${item.lineTotal.toFixed(2)}`
+        : '';
+
+    return `
     <tr style="${index % 2 === 1 ? 'background-color: #f8f8f8;' : ''}">
-      <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px;">${item.barcode}</td>
-      <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px;">${item.name.length > 50 ? item.name.substring(0, 47) + '...' : item.name}</td>
-      <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px;"></td>
-      <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px; text-align: center;">${item.quantity}</td>
+      <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px;">${escapeHtml(code)}</td>
+      <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px;">${escapeHtml(item.name.length > 50 ? item.name.substring(0, 47) + '...' : item.name)}</td>
+      <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px; text-align: center;">${quantityCell}</td>
+      <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px; text-align: right;">${priceCell}</td>
+      <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px; text-align: right;">${escapeHtml(lineTotalCell)}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
+
+  const orderTotal = poData.items.reduce(
+    (sum, item) => (item.lineTotal != null ? sum + item.lineTotal : sum),
+    0,
+  );
 
   return `
     <!DOCTYPE html>
@@ -143,15 +180,16 @@ function generatePurchaseOrderHTML(poData: POData, business: BusinessProfile | n
       <table>
         <thead>
           <tr>
-            <th style="width: 20%;">Code</th>
-            <th style="width: 50%;">Description</th>
-            <th style="width: 20%;">Size/Thickness/Colour</th>
-            <th style="width: 10%;">Quantity</th>
+            <th style="width: 18%;">Code</th>
+            <th style="width: 42%;">Description</th>
+            <th style="width: 16%; text-align: center;">Order Quantity</th>
+            <th style="width: 12%; text-align: right;">Unit Price (ex GST)</th>
+            <th style="width: 12%; text-align: right;">Line Total (ex GST)</th>
           </tr>
         </thead>
         <tbody>${itemsRows}</tbody>
       </table>
-      <div class="total-section">Total Items: ${totalItems}</div>
+      ${orderTotal > 0 ? `<div class="total-section">Order Total: $${orderTotal.toFixed(2)} (ex GST)<br/><span style="font-size: 12px; color: #777;">Total Items: ${totalItems}</span></div>` : `<div class="total-section">Total Items: ${totalItems}</div>`}
       <div class="footer">Thank you for your business!</div>
     </body>
     </html>

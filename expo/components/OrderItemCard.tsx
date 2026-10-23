@@ -4,6 +4,7 @@ import { OrderItem } from '@/types/inventory';
 import { useThemeStore } from '@/store/themeStore';
 import { Trash2 } from 'lucide-react-native';
 import QuantityInput from './QuantityInput';
+import { formatOrderQuantity, lineTotalExGst } from '@/utils/purchasing';
 
 interface OrderItemCardProps {
   item: OrderItem;
@@ -17,7 +18,13 @@ export default function OrderItemCard({
   onRemove 
 }: OrderItemCardProps) {
   const { colors } = useThemeStore();
-  
+
+  // Chapter 3: quantity edits are in ORDER units (packs/boxes/cartons); the
+  // card also shows the stock-unit equivalent and the ex-GST line total.
+  const orderQty = item.orderQuantity ?? item.quantity;
+  const qtyText = formatOrderQuantity(item, orderQty);
+  const lineTotal = lineTotalExGst(item, orderQty);
+
   return (
     <View style={[styles.container, { 
       backgroundColor: colors.background,
@@ -36,19 +43,36 @@ export default function OrderItemCard({
       
       <View style={styles.details}>
         <View style={styles.detailRow}>
-          <Text style={[styles.label, { color: colors.inactive }]}>Barcode:</Text>
-          <Text style={[styles.value, { color: colors.text }]}>{item.barcode}</Text>
+          <Text style={[styles.label, { color: colors.inactive }]}>
+            {item.supplierCode ? 'Supplier code:' : 'Barcode:'}
+          </Text>
+          <Text style={[styles.value, { color: colors.text }]}>
+            {item.supplierCode?.trim() || item.barcode}
+          </Text>
         </View>
         
         <View style={styles.detailRow}>
           <Text style={[styles.label, { color: colors.inactive }]}>Supplier:</Text>
           <Text style={[styles.value, { color: colors.text }]}>{item.supplier}</Text>
         </View>
+
+        {(qtyText.stockEquivalent || lineTotal != null) && (
+          <View style={styles.detailRow}>
+            <Text style={[styles.label, { color: colors.inactive }]}>Equates to:</Text>
+            <Text style={[styles.value, { color: colors.text }]}>
+              {qtyText.stockEquivalent ? `${qtyText.stockEquivalent.replace(/[()=]/g, '').trim()}` : ''}
+              {lineTotal != null ? `${qtyText.stockEquivalent ? '  •  ' : ''}$${lineTotal.toFixed(2)} ex GST` : ''}
+            </Text>
+          </View>
+        )}
       </View>
       
       <View style={styles.quantityContainer}>
+        <Text style={[styles.orderQtyLabel, { color: colors.inactive }]}>
+          Order quantity{item.orderUnit ? ` (${item.orderUnit})` : ''}
+        </Text>
         <QuantityInput 
-          value={item.quantity} 
+          value={orderQty} 
           onChange={(value) => onUpdateQuantity(item.productId, value)}
           min={1}
         />
@@ -103,5 +127,10 @@ const styles = StyleSheet.create({
   },
   quantityContainer: {
     marginTop: 8,
+  },
+  orderQtyLabel: {
+    fontSize: 13,
+    marginBottom: 6,
+    fontWeight: '500',
   },
 });

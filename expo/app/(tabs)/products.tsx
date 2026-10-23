@@ -66,16 +66,26 @@ export default function ProductsScreen() {
 
         Alert.alert(
           'Import Preview',
-          `Ready to import ${summary.imported} products. These will be added to your existing products — nothing is replaced. Importing the same file again will create duplicate products.${warningTail}`,
+          `Ready to import ${summary.imported} products. Existing products are matched and protected — genuine new products are added; duplicates and conflicting rows are skipped and reported. Nothing is replaced or overwritten.${warningTail}`,
           [
             { text: 'Cancel', style: 'cancel' },
             {
               text: 'Import',
               onPress: async () => {
                 try {
-                  await importProductsFromCSV(summary.products);
+                  // Chapter 3: the store matches against the existing catalogue
+                  // and skips duplicates/conflicts instead of duplicating.
+                  const outcome = await importProductsFromCSV(summary.products);
                   setShowUploadOptions(false);
-                  Alert.alert('Import Complete', `Imported ${summary.imported} products.`, [{ text: 'OK' }]);
+                  const skippedLines = outcome.details.slice(0, 5).join('\n');
+                  Alert.alert(
+                    'Import Complete',
+                    `Added ${outcome.toAdd.length} new product${outcome.toAdd.length === 1 ? '' : 's'}.\n` +
+                      `Skipped ${outcome.duplicates} duplicate${outcome.duplicates === 1 ? '' : 's'}` +
+                      (outcome.conflicts > 0 ? ` and ${outcome.conflicts} conflicting row${outcome.conflicts === 1 ? '' : 's'}.` : '.') +
+                      (outcome.details.length > 0 ? `\n\n${skippedLines}${outcome.details.length > 5 ? `\n…and ${outcome.details.length - 5} more` : ''}` : ''),
+                    [{ text: 'OK' }],
+                  );
                 } catch (err) {
                   const msg = err instanceof Error ? err.message : 'Failed to save imported products';
                   Alert.alert('Import Failed', msg, [{ text: 'OK' }]);

@@ -5,6 +5,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { PurchaseOrder, BusinessProfile } from '@/types/inventory';
 import { getCachedBusinessProfile } from './businessProfileService';
 import { generatePurchaseOrderPDF, POData, getPoNumber } from './pdfService';
+import { formatOrderQuantity, unitPriceLabel } from '@/utils/purchasing';
 
 /**
  * Copies the PDF returned by expo-print (which lives in the cache dir with a
@@ -68,10 +69,30 @@ export function formatPurchaseOrderEmail(
   const poNumber = getPoNumber(id);
   const formattedDate = new Date(date).toLocaleDateString();
   const subject = `Purchase Order ${poNumber} - ${supplierName}`;
+  // Chapter 3: item lines show the supplier product code and the order
+  // quantity in purchasing units (with stock-unit equivalent), plus ex-GST
+  // pricing when recorded. Legacy items keep the original plain lines.
   const itemsTable = items
-    .map((item, index) => `${index + 1}. ${item.name}\n   Code: ${item.barcode}\n   Quantity: ${item.quantity}\n`)
+    .map((item, index) => {
+      const code = item.supplierCode?.trim() || item.barcode;
+      const lines = [`${index + 1}. ${item.name}`, `   Code: ${code}`];
+      if (item.orderQuantity !== undefined) {
+        const qty = formatOrderQuantity(item, item.orderQuantity);
+        lines.push(`   Order Quantity: ${qty.main}${qty.stockEquivalent ? ` ${qty.stockEquivalent}` : ''}`);
+        const priceLabel = item.unitPrice !== undefined ? unitPriceLabel(item) : null;
+        if (priceLabel) lines.push(`   Unit Price: ${priceLabel} (ex GST)`);
+        if (item.lineTotal != null) lines.push(`   Line Total: $${item.lineTotal.toFixed(2)} (ex GST)`);
+      } else {
+        lines.push(`   Quantity: ${item.quantity}`);
+      }
+      return `${lines.join('\n')}\n`;
+    })
     .join('');
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+  const orderTotal = items.reduce(
+    (sum, item) => (item.lineTotal != null ? sum + item.lineTotal : sum),
+    0,
+  );
   const body = `Dear ${supplierName},
 
 Please see attached purchase order. Due ASAP. Thank you.
@@ -82,7 +103,7 @@ Supplier: ${supplierName}
 
 ITEMS ORDERED:
 ${itemsTable}
-Total Items: ${totalQuantity}
+Total Items: ${totalQuantity}${orderTotal > 0 ? `\nOrder Total: $${orderTotal.toFixed(2)} (ex GST)` : ''}
 
 Best regards,${businessSignature(business ?? null)}`;
 

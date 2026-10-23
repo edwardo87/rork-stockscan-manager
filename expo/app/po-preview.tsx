@@ -8,6 +8,15 @@ import { useInventoryStore } from '@/store/inventoryStore';
 import { formatDate } from '@/utils/dateUtils';
 import { sendPurchaseOrderEmail, previewPurchaseOrderPDF } from '@/services/emailService';
 import { generatePurchaseOrderPDF, POData, getPoNumber } from '@/services/pdfService';
+import { formatOrderQuantity } from '@/utils/purchasing';
+
+/** Sum of ex-GST line totals for an order (0 when no pricing snapshots exist). */
+function poOrderTotal(order: { items: any[] }): number {
+  return order.items.reduce(
+    (sum, item) => (item?.lineTotal != null ? sum + item.lineTotal : sum),
+    0,
+  );
+}
 
 export default function POPreviewScreen() {
   const router = useRouter();
@@ -293,29 +302,39 @@ export default function POPreviewScreen() {
                 <Text style={[styles.columnHeader, styles.qtyColumn, { color: colors.inactive }]}>Qty</Text>
               </View>
 
-              {order.items.map((item: any, idx: number) => (
-                <View 
-                  key={idx} 
-                  style={[styles.tableRow, { borderBottomColor: colors.border }]}
-                >
-                  <Text style={[styles.cell, styles.codeColumn, { color: colors.text }]}>
-                    {item.barcode}
-                  </Text>
-                  <Text 
-                    style={[styles.cell, styles.descColumn, { color: colors.text }]}
-                    numberOfLines={2}
+              {order.items.map((item: any, idx: number) => {
+                // Chapter 3: supplier code + order quantity in purchasing units
+                // when the item carries a purchasing snapshot; legacy items
+                // keep the original barcode/quantity display.
+                const code = item.supplierCode?.trim() || item.barcode;
+                const qty = item.orderQuantity !== undefined
+                  ? formatOrderQuantity(item, item.orderQuantity)
+                  : null;
+                return (
+                  <View
+                    key={idx}
+                    style={[styles.tableRow, { borderBottomColor: colors.border }]}
                   >
-                    {item.name}
-                  </Text>
-                  <Text style={[styles.cell, styles.qtyColumn, { color: colors.text }]}>
-                    {item.quantity}
-                  </Text>
-                </View>
-              ))}
+                    <Text style={[styles.cell, styles.codeColumn, { color: colors.text }]}>
+                      {code}
+                    </Text>
+                    <Text
+                      style={[styles.cell, styles.descColumn, { color: colors.text }]}
+                      numberOfLines={2}
+                    >
+                      {item.name}
+                    </Text>
+                    <Text style={[styles.cell, styles.qtyColumn, { color: colors.text }]}>
+                      {qty ? `${qty.main}${qty.stockEquivalent ? ` ${qty.stockEquivalent}` : ''}` : item.quantity}
+                    </Text>
+                  </View>
+                );
+              })}
 
               <View style={styles.poFooter}>
                 <Text style={[styles.totalItems, { color: colors.inactive }]}>
                   Total Items: {order.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}
+                  {poOrderTotal(order) > 0 ? `  •  Order Total: $${poOrderTotal(order).toFixed(2)} (ex GST)` : ''}
                 </Text>
                 
                 <View style={styles.buttonGrid}>

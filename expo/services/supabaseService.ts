@@ -1,10 +1,17 @@
 import { supabase, getCurrentUser, isSupabaseConfigured } from '@/lib/supabase';
 import { Product, OrderItem, StocktakeItem, PurchaseOrder, Supplier, BusinessProfile } from '@/types/inventory';
 import { Database } from '@/types/supabase';
+import {
+  effectiveUnitsPerOrderUnit,
+  effectivePriceBasisQuantity,
+  effectivePriceBasisUnit,
+} from '@/utils/purchasing';
 
 type SupabaseProduct = Database['public']['Tables']['products']['Row'];
 type SupabaseProductInsert = Database['public']['Tables']['products']['Insert'];
 type SupabaseProductUpdate = Database['public']['Tables']['products']['Update'];
+
+
 
 // Helper functions to convert between app types and Supabase types
 const convertSupabaseProductToApp = (supabaseProduct: SupabaseProduct): Product => ({
@@ -22,6 +29,17 @@ const convertSupabaseProductToApp = (supabaseProduct: SupabaseProduct): Product 
   minStock: supabaseProduct.min_stock,
   currentStock: supabaseProduct.current_stock,
   unit: supabaseProduct.unit,
+  // ---- Chapter 3 (runtime-guarded: absent until the migration is run) ----
+  supplierCode: supabaseProduct.supplier_code || undefined,
+  stockUnit: supabaseProduct.stock_unit || undefined,
+  orderUnit: supabaseProduct.order_unit || undefined,
+  unitsPerOrderUnit: supabaseProduct.units_per_order_unit ?? undefined,
+  purchasePrice:
+    supabaseProduct.purchase_price !== null && supabaseProduct.purchase_price !== undefined
+      ? Number(supabaseProduct.purchase_price)
+      : undefined,
+  priceBasisQuantity: supabaseProduct.price_basis_quantity ?? undefined,
+  priceBasisUnit: supabaseProduct.price_basis_unit || undefined,
   imageUrl: supabaseProduct.image_url || undefined,
   lastOrdered: supabaseProduct.last_ordered || undefined,
 });
@@ -48,6 +66,73 @@ const convertAppProductToSupabase = (product: Product, userId: string): Supabase
   image_url: product.imageUrl || null,
   last_ordered: product.lastOrdered || null,
 });
+
+// ===========================================================================
+// Chapter 3 — universal product and purchasing model
+// ===========================================================================
+
+/**
+ * Chapter 3 columns exist only after the owner runs chapter3-migration.sql on
+ * production. The app detects their availability once per session and omits
+ * the new columns from writes while absent — so the current build keeps
+ * working BEFORE the migration and gains purchasing fields AFTER it, with no
+ * failing inserts in either state.
+ */
+let chapter3ColumnsPromise: Promise<boolean> | null = null;
+
+async function hasChapter3Columns(): Promise<boolean> {
+  if (!supabase) return false;
+  if (!chapter3ColumnsPromise) {
+    chapter3ColumnsPromise = (async () => {
+      try {
+        const { error } = await supabase!
+          .from('products')
+          .select('supplier_code, stock_unit, order_unit, units_per_order_unit, purchase_price, price_basis_quantity, price_basis_unit')
+          .limit(1);
+        if (error) {
+          console.log('Chapter 3 columns not available yet:', error.message);
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.log('Chapter 3 column detection failed:', err);
+        return false;
+      }
+    })();
+  }
+  return chapter3ColumnsPromise;
+}
+
+/** Chapter 3 product fields for inserts — spread in only when the DB has them. */
+function chapter3ProductInsertFields(product: Product): Partial<SupabaseProductInsert> {
+  return {
+    supplier_code: product.supplierCode?.trim() || '',
+    stock_unit: product.stockUnit?.trim() || '',
+    order_unit: product.orderUnit?.trim() || '',
+    units_per_order_unit: effectiveUnitsPerOrderUnit(product),
+    purchase_price:
+      Number.isFinite(Number(product.purchasePrice)) && Number(product.purchasePrice) > 0
+        ? Number(product.purchasePrice)
+        : null,
+    price_basis_quantity: effectivePriceBasisQuantity(product),
+    price_basis_unit: effectivePriceBasisUnit(product),
+  };
+}
+
+/** Chapter 3 order-item fields for inserts — spread in only when the DB has them. */
+function chapter3OrderItemFields(item: OrderItem): Record<string, unknown> {
+  return {
+    supplier_code: item.supplierCode?.trim() || '',
+    order_unit: item.orderUnit?.trim() || '',
+    units_per_order_unit:
+      item.unitsPerOrderUnit !== undefined ? effectiveUnitsPerOrderUnit(item) : null,
+    order_quantity: item.orderQuantity !== undefined ? item.orderQuantity : null,
+    unit_price: item.unitPrice !== undefined ? item.unitPrice : null,
+    price_basis_quantity: item.priceBasisQuantity !== undefined ? item.priceBasisQuantity : null,
+    price_basis_unit: item.priceBasisUnit?.trim() || '',
+    line_total: item.lineTotal !== undefined ? item.lineTotal : null,
+  };
+}
 
 export class SupabaseService {
   // Check if service is available
@@ -99,10 +184,16 @@ export class SupabaseService {
     }
 
     const supabaseProduct = convertAppProductToSupabase(product, user.id);
-    
+    // Chapter 3 fields only when the database has them (see hasChapter3Columns).
+    const includeChapter3 = await hasChapter3Columns();
+
     const { data, error } = await supabase
       .from('products')
-      .insert(supabaseProduct)
+      .insert(
+        includeChapter3
+          ? { ...supabaseProduct, ...chapter3ProductInsertFields(product) }
+          : supabaseProduct,
+      )
       .select()
       .single();
 
@@ -141,6 +232,22 @@ export class SupabaseService {
     if (updates.unit !== undefined) supabaseUpdates.unit = updates.unit;
     if (updates.imageUrl !== undefined) supabaseUpdates.image_url = updates.imageUrl || null;
     if (updates.lastOrdered !== undefined) supabaseUpdates.last_ordered = updates.lastOrdered || null;
+
+    // Chapter 3 fields only when the database has them (see hasChapter3Columns).
+    if (await hasChapter3Columns()) {
+      if (updates.supplierCode !== undefined) supabaseUpdates.supplier_code = updates.supplierCode.trim();
+      if (updates.stockUnit !== undefined) supabaseUpdates.stock_unit = updates.stockUnit.trim();
+      if (updates.orderUnit !== undefined) supabaseUpdates.order_unit = updates.orderUnit.trim();
+      if (updates.unitsPerOrderUnit !== undefined) supabaseUpdates.units_per_order_unit = effectiveUnitsPerOrderUnit(updates);
+      if (updates.purchasePrice !== undefined) {
+        supabaseUpdates.purchase_price =
+          Number.isFinite(Number(updates.purchasePrice)) && Number(updates.purchasePrice) > 0
+            ? Number(updates.purchasePrice)
+            : null;
+      }
+      if (updates.priceBasisQuantity !== undefined) supabaseUpdates.price_basis_quantity = effectivePriceBasisQuantity(updates);
+      if (updates.priceBasisUnit !== undefined) supabaseUpdates.price_basis_unit = updates.priceBasisUnit.trim();
+    }
 
     if (!supabase) {
       throw new Error('Supabase client not available');
@@ -202,13 +309,18 @@ export class SupabaseService {
       throw new Error('Supabase client not available');
     }
 
-    const supabaseProducts = products.map(product => 
+    const supabaseProducts = products.map(product =>
       convertAppProductToSupabase(product, user.id)
     );
+    // Chapter 3 fields only when the database has them (checked once per call).
+    const includeChapter3 = await hasChapter3Columns();
+    const payload = includeChapter3
+      ? supabaseProducts.map((p, i) => ({ ...p, ...chapter3ProductInsertFields(products[i]) }))
+      : supabaseProducts;
 
     const { data, error } = await supabase
       .from('products')
-      .insert(supabaseProducts)
+      .insert(payload)
       .select();
 
     if (error) {
@@ -266,7 +378,9 @@ export class SupabaseService {
       throw new Error(`Failed to create purchase order: ${detail}`);
     }
 
-    // Create order items
+    // Create order items. Chapter 3 purchasing snapshots included only when
+    // the database has the columns; historical quantity semantics unchanged.
+    const includeChapter3 = await hasChapter3Columns();
     const orderItems = items.map(item => ({
       purchase_order_id: orderData.id,
       product_id: item.productId,
@@ -274,6 +388,7 @@ export class SupabaseService {
       name: item.name,
       quantity: item.quantity,
       supplier: item.supplier,
+      ...(includeChapter3 ? chapter3OrderItemFields(item) : {}),
     }));
 
     const { error: itemsError } = await supabase
@@ -361,6 +476,15 @@ export class SupabaseService {
         name: it.name,
         quantity: Number(it.quantity),
         supplier: it.supplier,
+        // ---- Chapter 3 purchasing snapshots (absent on historical rows) ----
+        supplierCode: it.supplier_code || undefined,
+        orderUnit: it.order_unit || undefined,
+        orderQuantity: it.order_quantity !== null && it.order_quantity !== undefined ? Number(it.order_quantity) : undefined,
+        unitsPerOrderUnit: it.units_per_order_unit !== null && it.units_per_order_unit !== undefined ? Number(it.units_per_order_unit) : undefined,
+        unitPrice: it.unit_price !== null && it.unit_price !== undefined ? Number(it.unit_price) : undefined,
+        priceBasisQuantity: it.price_basis_quantity !== null && it.price_basis_quantity !== undefined ? Number(it.price_basis_quantity) : undefined,
+        priceBasisUnit: it.price_basis_unit || undefined,
+        lineTotal: it.line_total !== null && it.line_total !== undefined ? Number(it.line_total) : undefined,
       });
       itemsByOrder.set(it.purchase_order_id, arr);
     }

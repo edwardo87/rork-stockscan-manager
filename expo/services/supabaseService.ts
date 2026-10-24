@@ -6,10 +6,31 @@ import {
   effectivePriceBasisQuantity,
   effectivePriceBasisUnit,
 } from '@/utils/purchasing';
+import { fetchBusinessProfile } from '@/services/businessProfileService';
 
 type SupabaseProduct = Database['public']['Tables']['products']['Row'];
 type SupabaseProductInsert = Database['public']['Tables']['products']['Insert'];
 type SupabaseProductUpdate = Database['public']['Tables']['products']['Update'];
+
+/**
+ * RFC4122 v4 UUID for client-side row ids (same pattern as
+ * csvImportService.generateProductId — prefer crypto.randomUUID, fall back
+ * to a v4-format string). Used where a blind INSERT must know the row id
+ * without requesting a RETURNING row that RLS would have to re-approve.
+ */
+function generateBusinessId(): string {
+  const g: { crypto?: { randomUUID?: () => string } } = globalThis as unknown as {
+    crypto?: { randomUUID?: () => string };
+  };
+  if (g.crypto && typeof g.crypto.randomUUID === 'function') {
+    return g.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 
 
@@ -731,15 +752,28 @@ export class SupabaseService {
       throw new Error('Supabase client not available');
     }
 
-    const { data: business, error: insertError } = await supabase
+    // RLS note: the INSERT must NOT request the returned row (.select()).
+    // PostgREST turns .select() into INSERT ... RETURNING, and a RETURNING row
+    // must ALSO pass the SELECT policy "businesses_select_member" — which
+    // matches on users.business_id, still NULL for a pre-claim account. That
+    // conflict failed every first-time creation with 42501 "new row violates
+    // row-level security policy" even though businesses_insert_own passed.
+    // Flow: blind insert (no returning) → claim membership via the RPC →
+    // fetch the row (visible once membership is established).
+    //
+    // The claim RPC requires the business id, which a blind insert does not
+    // return — so generate it client-side (id has gen_random_uuid() as its
+    // DEFAULT; an explicit uuid is equally valid and equally policy-checked).
+    const businessId = generateBusinessId();
+
+    const { error: insertError } = await supabase
       .from('businesses')
       .insert({
+        id: businessId,
         name: name.trim(),
         contact_email: contactEmail.trim(),
         created_by: user.id,
-      })
-      .select()
-      .single();
+      });
 
     if (insertError) {
       console.error('Error creating business:', JSON.stringify(insertError, null, 2));
@@ -748,27 +782,40 @@ export class SupabaseService {
 
     // Establishes membership; rejected if this account already has one or if
     // the business was not created by this user (guard trigger + RPC checks).
+    // The RPC is SECURITY DEFINER and returns the claimed business id.
     const { data: claimedId, error: claimError } = await supabase.rpc('claim_my_business', {
-      p_business_id: business.id,
+      p_business_id: businessId,
     });
 
     if (claimError) {
       console.error('Error claiming business:', JSON.stringify(claimError, null, 2));
       throw new Error(`Failed to claim business: ${claimError.message || 'Unknown database error'}`);
     }
-    if (claimedId !== business.id) {
+    if (!claimedId) {
       throw new Error('Unexpected business id returned by claim');
     }
 
-    return {
-      id: business.id,
-      name: business.name ?? '',
-      contactEmail: business.contact_email ?? '',
-      phone: business.phone ?? '',
-      address: business.address ?? '',
-      deliveryAddress: business.delivery_address ?? '',
-      logoUrl: business.logo_url || undefined,
+    const profileFromInputs = {
+      id: claimedId,
+      name: name.trim(),
+      contactEmail: contactEmail.trim(),
+      phone: '',
+      address: '',
+      deliveryAddress: '',
+      logoUrl: undefined,
     };
+
+    // Membership is now established, so the row is visible under
+    // businesses_select_member. Prefer the authoritative row (the database
+    // may have normalised fields); fall back to the submitted values if the
+    // immediate read fails — the profile screen reloads it anyway.
+    try {
+      const profile = await fetchBusinessProfile();
+      if (profile) return profile;
+    } catch (e) {
+      console.warn('Post-claim business read failed; returning submitted values:', e);
+    }
+    return profileFromInputs;
   }
 
   /**

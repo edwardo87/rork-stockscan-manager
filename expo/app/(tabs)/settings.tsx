@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Info, Wrench, FileText, BookOpen, Trash2, Building2, Truck, FileSpreadsheet } from 'lucide-react-native';
+import { Info, Wrench, FileText, BookOpen, Trash2, Building2, Truck, FileSpreadsheet, LogOut } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { useInventoryStore } from '@/store/inventoryStore';
@@ -31,7 +31,39 @@ export default function SettingsScreen() {
     toggleRecentlyOrdered,
   } = useNotificationsStore();
   
-  const { clearAllData, products } = useInventoryStore();
+  const { clearAllData, products, signOut } = useInventoryStore();
+
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Log Out',
+      'Sign out of SmartStock? Your data stays safely in the cloud — you can sign back in to this account or another one at any time.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            if (!isMountedRef.current) return;
+            try {
+              setIsSigningOut(true);
+              await signOut();
+              // AppWrapper swaps to the sign-in screen once isAuthenticated
+              // clears — no navigation needed. Reset for the next session.
+              if (isMountedRef.current) setIsSigningOut(false);
+            } catch (err) {
+              if (isMountedRef.current) {
+                setIsSigningOut(false);
+                const msg = err instanceof Error ? err.message : 'Failed to sign out';
+                Alert.alert('Sign Out Failed', msg, [{ text: 'OK' }]);
+              }
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const testEnvironment = async () => {
     if (!isMountedRef.current) return;
@@ -278,6 +310,37 @@ export default function SettingsScreen() {
               </Text>
               <Text style={[styles.settingDescription, { color: colors.inactive }]}>
                 Learn more about the app
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Account Section */}
+      <View style={[styles.section, { backgroundColor: colors.background }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
+
+        <TouchableOpacity
+          style={[
+            styles.settingRow,
+            { borderTopColor: colors.border },
+            isSigningOut && { opacity: 0.6 },
+          ]}
+          onPress={handleSignOut}
+          disabled={isSigningOut}
+        >
+          <View style={styles.settingInfo}>
+            {isSigningOut ? (
+              <ActivityIndicator size="small" color={colors.error || '#FF3B30'} style={styles.settingIcon} />
+            ) : (
+              <LogOut size={22} color={colors.error || '#FF3B30'} style={styles.settingIcon} />
+            )}
+            <View>
+              <Text style={[styles.settingLabel, { color: colors.error || '#FF3B30' }]}>
+                Log Out
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                Sign out and choose another account
               </Text>
             </View>
           </View>

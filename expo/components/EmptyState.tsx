@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { ScanBarcode, ClipboardList, Archive } from 'lucide-react-native';
 
@@ -41,35 +41,48 @@ export default function EmptyState({ type, onAction }: EmptyStateProps) {
   }
 
   return (
-    <View style={styles.container}>
+    // ScrollView (not flex-centred View): when the space above is squeezed —
+    // e.g. the Products screen with its upload-options panel expanded — a
+    // flex-centred View's content overflows upward and draws over sibling
+    // views. A ScrollView instead scrolls, so it can never overlap anything.
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={[styles.iconContainer, { backgroundColor: colors.lightGray }]}>
         {icon}
       </View>
       <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
       <Text style={[styles.message, { color: colors.inactive }]}>{message}</Text>
       {actionText && onAction && (
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.primary }]} 
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: colors.primary }]}
           onPress={onAction}
         >
           <Text style={[styles.buttonText, { color: colors.background }]}>{actionText}</Text>
         </TouchableOpacity>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  // flexGrow keeps centre-when-there's-room behaviour; scrolling takes over
+  // instead of overflowing when the content is taller than the space.
+  content: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 104,
+    height: 104,
+    borderRadius: 52,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -80,7 +93,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
     marginBottom: 12,
     textAlign: 'center',

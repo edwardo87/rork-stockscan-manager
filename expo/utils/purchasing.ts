@@ -83,7 +83,17 @@ export function unitPriceLabel(p: Partial<Product>): string | null {
   const basisQty = effectivePriceBasisQuantity(p);
   const basisUnit = effectivePriceBasisUnit(p);
   const basis = basisQty === 1 ? basisUnit : `${basisQty} ${basisUnit}`;
-  return `$${price.toFixed(2)} per ${basis}`;
+  return `${formatUnitPrice(price)} per ${basis}`;
+}
+
+/**
+ * Money for unit prices: 2 decimals normally, but up to 5 when the supplier
+ * quotes finer than cents (e.g. $0.0177 screws) so precision is never lost.
+ */
+export function formatUnitPrice(price: number): string {
+  if (Math.abs(price * 100 - Math.round(price * 100)) < 1e-6) return `$${price.toFixed(2)}`;
+  const s = price.toFixed(5).replace(/0+$/, '');
+  return `$${(s.split('.')[1] ?? '').length < 2 ? price.toFixed(2) : s}`;
 }
 
 export interface OrderQuantityText {

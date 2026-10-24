@@ -35,6 +35,10 @@ export interface SheetData {
   rows: string[][];
   /** PDF only: sheet row indexes whose cells did not align cleanly with a column. */
   lowConfidenceRows?: number[];
+  /** PDF only: how the document's text lines were classified. */
+  layout?: PdfLayoutStats;
+  /** Text outside the product table (titles, quote/customer details) — used to recognise the document type. */
+  contextText?: string;
 }
 
 export interface ParsedCatalogueFile {
@@ -43,6 +47,78 @@ export interface ParsedCatalogueFile {
   sheets: SheetData[];
   /** Notes about how the file was read (shown to the user). */
   notes: string[];
+  /** What kind of supplier document this appears to be. */
+  document: DocumentInfo;
+}
+
+// ============================================================================
+// Document recognition
+// ============================================================================
+
+export type DocumentKind = 'quotation' | 'price-list' | 'catalogue' | 'stock-report' | 'unknown';
+
+export interface DocumentInfo {
+  kind: DocumentKind;
+  /** Plain-language label, e.g. "Quotation 70294". */
+  label: string;
+  /** Quote / price-list reference number when one is printed. */
+  reference?: string;
+  /** What the importer does differently for this kind of document. */
+  explanation: string;
+}
+
+const DOC_EXPLANATION: Record<DocumentKind, string> = {
+  quotation:
+    'Quantities on a quote are what was quoted, not pack sizes or stock — they are only used to check each price against its line total.',
+  'price-list': 'Prices are read with their price basis (each, per 100, per 1,000, per metre or per pack).',
+  catalogue: 'Prices are read with their price basis (each, per 100, per 1,000, per metre or per pack).',
+  'stock-report':
+    'Quantities in a stock report are the supplier’s stock levels. They are shown for reference and never become your stock.',
+  unknown: 'Check the column choices — every column can be changed.',
+};
+
+/**
+ * Recognises the document type from its title/header text and its column
+ * headings. General rules only — no supplier-specific layouts.
+ */
+export function detectDocumentKind(contextText: string, headers: string[] = []): DocumentInfo {
+  const t = ` ${(contextText || '').toLowerCase().replace(/\s+/g, ' ')} `;
+  const h = headers.map(normaliseHeader);
+  const has = (field: TargetField) => h.some(x => aliasScore(x, field) >= 40);
+  const qtyAndTotal = has('quotedQuantity') && (has('lineTotal') || has('lineTotalIncGst'));
+  const isStock = /stock (report|on hand report|listing|availability)|inventory (report|listing)|availability report|stock status/.test(t);
+  const isQuote = /\bquot(e|ation)\b/.test(t);
+  const priceWords = /price ?list|price listing|quoted pricing|special price|price catalogue|price file|trade price|pricing|price quotation/.test(t);
+  const isCatalogue = /\bcatalog(ue)?\b/.test(t);
+  const refMatch = (contextText || '').match(/\b(?:quot(?:e|ation)(?:\s*(?:number|no\.?|#|ref(?:erence)?))?)\s*:?\s*([A-Z]{0,5}\d{3,}[A-Z0-9-]*)/i);
+  const reference = refMatch ? refMatch[1] : undefined;
+  let kind: DocumentKind;
+  if (isStock) kind = 'stock-report';
+  else if (qtyAndTotal) kind = 'quotation';
+  else if (priceWords || isQuote) kind = 'price-list';
+  else if (isCatalogue) kind = 'catalogue';
+  else kind = 'unknown';
+  const base: Record<DocumentKind, string> = {
+    quotation: 'Quotation',
+    'price-list': isQuote ? 'Price quote' : 'Price list',
+    catalogue: 'Catalogue',
+    'stock-report': 'Stock report',
+    unknown: 'Supplier document',
+  };
+  return {
+    kind,
+    label: reference && (kind === 'quotation' || kind === 'price-list') ? `${base[kind]} ${reference}` : base[kind],
+    reference,
+    explanation: DOC_EXPLANATION[kind],
+  };
+}
+
+function documentFor(sheets: SheetData[]): DocumentInfo {
+  const s = sheets[0];
+  if (!s) return detectDocumentKind('');
+  const hdr = detectHeaderRow(s.rows);
+  const preamble = s.rows.slice(0, hdr).map(r => r.join(' ')).join(' ');
+  return detectDocumentKind(`${s.contextText || ''} ${preamble} ${s.name}`, s.rows[hdr] ?? []);
 }
 
 export function detectSource(fileName: string, mimeType?: string | null): CatalogueSource | null {
@@ -164,7 +240,8 @@ export async function parseCatalogueFile(
   source: CatalogueSource,
 ): Promise<ParsedCatalogueFile> {
   if (source === 'csv') {
-    return { source, fileName, sheets: [parseCsvToSheet(bytesToText(data))], notes: [] };
+    const sheets = [parseCsvToSheet(bytesToText(data))];
+    return { source, fileName, sheets, notes: [], document: documentFor(sheets) };
   }
   if (source === 'xlsx') {
     let sheets: SheetData[];
@@ -175,7 +252,7 @@ export async function parseCatalogueFile(
     }
     const nonEmpty = sheets.filter(s => s.rows.length > 0);
     if (nonEmpty.length === 0) throw new Error('This workbook has no data in any worksheet.');
-    return { source, fileName, sheets: nonEmpty, notes: [] };
+    return { source, fileName, sheets: nonEmpty, notes: [], document: documentFor(nonEmpty) };
   }
   const rows = extractPdfTextRows(data); // throws PdfLimitationError
   const table = pdfRowsToSheet(rows);
@@ -185,11 +262,13 @@ export async function parseCatalogueFile(
       'Text was found in this PDF, but no product table with recognisable column headings (for example "Code", "Description", "Price") could be located. Ask the supplier for an Excel or CSV version.',
     );
   }
+  const document = documentFor([table.sheet]);
   return {
     source,
     fileName,
     sheets: [table.sheet],
-    notes: table.notes,
+    notes: [`Recognised as: ${document.label}. ${document.explanation}`, ...table.notes],
+    document,
   };
 }
 
@@ -214,7 +293,21 @@ export type TargetField =
   | 'supplierEmail'
   | 'sellPrice'
   | 'currentStock'
-  | 'minStock';
+  | 'minStock'
+  // Quote / reference fields: kept in the draft for checking, never saved as product data.
+  | 'customerCode'
+  | 'quotedQuantity'
+  | 'discountPercent'
+  | 'lineTotal'
+  | 'gstAmount'
+  | 'lineTotalIncGst'
+  | 'purchasePriceIncGst'
+  | 'supplierStock';
+
+/** Fields that are only used to check or explain a row — never saved to the product. */
+export const REFERENCE_FIELDS: TargetField[] = [
+  'customerCode', 'quotedQuantity', 'discountPercent', 'lineTotal', 'gstAmount', 'lineTotalIncGst', 'supplierStock',
+];
 
 export const TARGET_FIELDS: { field: TargetField; label: string; hint: string }[] = [
   { field: 'name', label: 'Product name', hint: 'Required' },
@@ -234,6 +327,14 @@ export const TARGET_FIELDS: { field: TargetField; label: string; hint: string }[
   { field: 'sellPrice', label: 'Sell price', hint: 'Retail / RRP' },
   { field: 'currentStock', label: 'Your stock on hand', hint: 'Only your own count — never supplier stock' },
   { field: 'minStock', label: 'Minimum stock', hint: 'Reorder point' },
+  { field: 'customerCode', label: 'Your code at supplier', hint: 'Customer code — used as your SKU when no SKU column' },
+  { field: 'quotedQuantity', label: 'Quoted quantity', hint: 'Qty on a quote — never a pack size or stock' },
+  { field: 'discountPercent', label: 'Discount %', hint: 'Used to work out the net price' },
+  { field: 'lineTotal', label: 'Line total (ex GST)', hint: 'Extended amount — used to check the price' },
+  { field: 'gstAmount', label: 'GST amount', hint: 'Checked, not imported' },
+  { field: 'lineTotalIncGst', label: 'Line total (inc GST)', hint: 'Checked, not imported' },
+  { field: 'purchasePriceIncGst', label: 'Price inc GST', hint: 'Converted to ex GST (÷ 1.1) and flagged' },
+  { field: 'supplierStock', label: "Supplier's stock", hint: 'Reference only — never your stock' },
 ];
 
 export const FIELD_LABEL: Record<TargetField, string> = TARGET_FIELDS.reduce(
@@ -270,15 +371,16 @@ const ALIASES: Record<TargetField, string[]> = {
   stockUnit: ['stock unit', 'count unit', 'base unit', 'base uom', 'stocking unit', 'unit'],
   purchasePrice: [
     'purchase price', 'buy price', 'cost price', 'trade price', 'net price', 'nett price', 'nett',
-    'unit price', 'your price', 'price ex gst', 'price excl gst', 'price ex', 'ex gst', 'excl gst',
-    'cost ex gst', 'dealer price', 'price', 'cost', 'unit cost',
+    'unit price', 'your price', 'price ex gst', 'price excl gst', 'price ex', 'unit price ex gst',
+    'cost ex gst', 'dealer price', 'price', 'cost', 'unit cost', 'rate', 'pack rate', 'rate lm', 'price lm',
+    'value',
   ],
   priceBasisQuantity: [
     'price basis quantity', 'price per', 'priced per', 'price basis', 'price unit', 'price qty',
     'per qty', 'pricing unit', 'price uom', 'per',
   ],
   priceBasisUnit: ['price basis unit'],
-  category: ['category', 'product category', 'group', 'product group', 'range', 'department', 'family', 'class', 'type'],
+  category: ['category', 'product category', 'group', 'product group', 'range', 'department', 'family', 'class', 'type', 'section', 'heading'],
   sku: ['sku', 'your sku', 'internal code', 'our code'],
   supplier: ['supplier', 'supplier name', 'vendor', 'vendor name'],
   supplierEmail: ['supplier email', 'order email', 'ordering email', 'email'],
@@ -286,6 +388,30 @@ const ALIASES: Record<TargetField, string[]> = {
   // Deliberately exact-only: supplier files often contain THEIR stock levels.
   currentStock: ['current stock', 'my stock', 'our stock', 'stock on hand mine'],
   minStock: ['min stock', 'minimum stock', 'reorder point', 'reorder level', 'par level', 'min qty'],
+  customerCode: [
+    'customer code', 'customer product id', 'customer product code', 'customer item code', 'customer part number',
+    'customer part no', 'cust code', 'cust product code', 'your code', 'your part number', 'customer sku',
+  ],
+  quotedQuantity: [
+    'quoted quantity', 'quoted qty', 'quote qty', 'qty quoted', 'qty ord', 'qty ordered', 'order qty', 'ordered',
+    'ord qty', 'quantity ordered', 'quantity', 'qty',
+  ],
+  discountPercent: ['discount percent', 'discount', 'disc', 'less disc', 'disc percent'],
+  lineTotal: [
+    'line total', 'line total ex gst', 'total ex gst', 'amount ex gst', 'ext ex gst', 'extended', 'extended price',
+    'extended amount', 'ext price', 'ext amount', 'ext', 'nett amount', 'net amount', 'amount', 'ex gst', 'excl gst',
+    'total',
+  ],
+  gstAmount: ['gst', 'gst amount', 'tax amount', 'tax'],
+  lineTotalIncGst: [
+    'total amount', 'total inc gst', 'total incl gst', 'amount inc gst', 'line total inc gst', 'inc gst', 'incl gst',
+    'gross amount',
+  ],
+  purchasePriceIncGst: ['price inc gst', 'price incl gst', 'unit price inc gst', 'unit price incl gst', 'cost inc gst'],
+  supplierStock: [
+    'supplier stock', 'exstck', 'ex stck', 'ex stock', 'qty exstck', 'qty ex stock', 'stock', 'soh', 'stock on hand',
+    'available', 'availability', 'qty available', 'avail', 'in stock', 'free stock', 'on hand',
+  ],
 };
 
 export function normaliseHeader(raw: string): string {
@@ -340,7 +466,17 @@ function numericRatio(values: string[]): number {
  * and each column to at most one field (best scores first). Ambiguous
  * stock-like columns are never mapped automatically.
  */
-export function autoMapColumns(headers: string[], sampleRows: string[][] = []): ColumnMapping {
+export function autoMapColumns(
+  headers: string[],
+  sampleRows: string[][] = [],
+  documentKind: DocumentKind = 'unknown',
+): ColumnMapping {
+  const mapping = aliasMapColumns(headers, sampleRows);
+  return refineMappingWithValues(headers, sampleRows, mapping, documentKind);
+}
+
+/** Header-only mapping (no value checks). */
+function aliasMapColumns(headers: string[], sampleRows: string[][] = []): ColumnMapping {
   const mapping: ColumnMapping = headers.map(() => null);
   const pairs: { col: number; field: TargetField; score: number }[] = [];
   headers.forEach((h, col) => {
@@ -369,6 +505,143 @@ export function autoMapColumns(headers: string[], sampleRows: string[][] = []): 
     if (descCol >= 0) mapping[descCol] = 'name';
   }
   return mapping;
+}
+
+/** Numbers allowed in a "Unit"/"Per" column that means "price per N". */
+const BASIS_NUMBERS = new Set([1, 10, 100, 1000, 10000]);
+
+function isBasisLikeValue(v: string): boolean {
+  const s = v.trim();
+  if (/^[\d,]+$/.test(s)) return BASIS_NUMBERS.has(parseInt(s.replace(/,/g, ''), 10));
+  const b = parsePriceBasis(s);
+  return !b.ambiguous && b.quantity !== undefined;
+}
+
+function cellNumber(raw: string | undefined): number | undefined {
+  const m = parseMoney(raw);
+  if (m.value !== undefined) return m.value;
+  return m.issue === 'zero' ? 0 : undefined;
+}
+
+/**
+ * Uses the values themselves to correct header-only guesses:
+ *  - a "Unit"/"UOM" column holding 1/100/1000 or EA/Roll/Carton is the price basis;
+ *  - quantity × price ÷ basis = line total decides which money column is which;
+ *  - a stock report's quantity column is the supplier's stock.
+ * Every result stays user-overridable.
+ */
+export function refineMappingWithValues(
+  headers: string[],
+  rows: string[][],
+  input: ColumnMapping,
+  documentKind: DocumentKind = 'unknown',
+): ColumnMapping {
+  const mapping = [...input];
+  const colVals = (c: number) => rows.map(r => (r[c] ?? '').trim()).filter(Boolean);
+  const idx = (f: TargetField) => mapping.indexOf(f);
+
+  // 1. Unit-like column that actually states the price basis.
+  if (idx('priceBasisQuantity') < 0) {
+    for (let c = 0; c < headers.length; c++) {
+      const f = mapping[c];
+      const n = normaliseHeader(headers[c]);
+      if (f !== 'orderUnit' && f !== 'stockUnit' && f !== 'priceBasisUnit') continue;
+      if (!/\b(unit|uom|per)\b/.test(n) || /order|stock|base|count|pack|purchase|buy|sell/.test(n)) continue;
+      const vals = colVals(c);
+      if (vals.length > 0 && vals.every(isBasisLikeValue)) { mapping[c] = 'priceBasisQuantity'; break; }
+    }
+  }
+
+  // 2. Stock reports: quantities are the supplier's stock levels.
+  if (documentKind === 'stock-report') {
+    const q = idx('quotedQuantity');
+    if (q >= 0 && idx('supplierStock') < 0) mapping[q] = 'supplierStock';
+  }
+
+  // 3. Money columns, decided by arithmetic.
+  const qtyCol = idx('quotedQuantity');
+  const basisCol = idx('priceBasisQuantity');
+  const discCol = idx('discountPercent');
+  const rate = (priceCol: number, totalCol: number) => {
+    let checked = 0;
+    let matched = 0;
+    for (const r of rows) {
+      const qty = cellNumber(r[qtyCol]);
+      const price = cellNumber(r[priceCol]);
+      const total = cellNumber(r[totalCol]);
+      if (!qty || !price || total === undefined) continue;
+      const b = basisCol >= 0 ? parsePriceBasis(r[basisCol]) : {};
+      const rec = reconcileLine({
+        quantity: qty, price, basis: b.quantity, discountPercent: discCol >= 0 ? cellNumber(r[discCol]) : undefined, lineTotal: total,
+      });
+      checked++;
+      if (rec.status === 'match') matched++;
+    }
+    return { checked, rate: checked ? matched / checked : 0 };
+  };
+  const numericCols = headers
+    .map((_, c) => c)
+    .filter(c => mapping[c] === null && numericRatio(rows.map(r => r[c] ?? '')) > 0.8);
+  if (qtyCol >= 0) {
+    const priceCol = idx('purchasePrice');
+    const totalCol = idx('lineTotal');
+    if (priceCol >= 0 && totalCol >= 0) {
+      const r1 = rate(priceCol, totalCol);
+      if (r1.checked >= 2 && r1.rate < 0.5) {
+        const r2 = rate(totalCol, priceCol);
+        if (r2.rate > r1.rate + 0.3) { mapping[priceCol] = 'lineTotal'; mapping[totalCol] = 'purchasePrice'; }
+      }
+    } else if (priceCol >= 0) {
+      const hit = numericCols.find(c => { const r = rate(priceCol, c); return r.checked >= 2 && r.rate >= 0.8; });
+      if (hit !== undefined) mapping[hit] = 'lineTotal';
+    } else if (totalCol >= 0) {
+      const hit = numericCols.find(c => { const r = rate(c, totalCol); return r.checked >= 2 && r.rate >= 0.8; });
+      if (hit !== undefined) mapping[hit] = 'purchasePrice';
+    }
+  } else if (idx('purchasePrice') < 0 && idx('lineTotal') >= 0) {
+    // No quantities: the only money column ("Ex GST", "Amount") is the price.
+    mapping[idx('lineTotal')] = 'purchasePrice';
+  }
+  return mapping;
+}
+
+/** Price basis stated in a price column's heading, e.g. "Price per 100", "Rate $/lm". */
+export function basisFromHeader(header: string | undefined): BasisParse | undefined {
+  const raw = (header || '').toLowerCase();
+  if (!raw) return undefined;
+  const m = raw.match(/(?:\bper\b|\/)\s*([\d,]+)?\s*(lm|lin\.? ?m|metre|meter|mtr|m|each|ea|100|1000|kg|litre|ltr|roll|box|carton|ctn|pack|pk)?\b/);
+  if (!m || (!m[1] && !m[2])) return undefined;
+  const qty = m[1] ? parseInt(m[1].replace(/,/g, ''), 10) : undefined;
+  const word = (m[2] || '').replace(/[. ]/g, '');
+  if (/^\d+$/.test(word)) return { quantity: parseInt(word, 10), unit: 'each' };
+  const unit = word === 'm' || word === 'linm' ? 'metre' : word ? UNIT_WORDS[word] : 'each';
+  if (!unit) return undefined;
+  return { quantity: qty ?? 1, unit };
+}
+
+/** Extra context derived from the column headings, shared by every row. */
+export interface ColumnHints {
+  /** Price basis stated in the price heading. */
+  priceBasis?: BasisParse;
+  /** Word for the order unit taken from the pack heading ("Box Qty" → box). */
+  packWord?: string;
+  /** Price heading says the price includes GST. */
+  priceIncGst?: boolean;
+}
+
+export function columnHints(headers: string[], mapping: ColumnMapping): ColumnHints {
+  const hints: ColumnHints = {};
+  const p = mapping.indexOf('purchasePrice');
+  if (p >= 0) {
+    hints.priceBasis = basisFromHeader(headers[p]);
+    if (/\binc(l|luding)?\.?\s*gst\b/i.test(headers[p] || '')) hints.priceIncGst = true;
+  }
+  const u = mapping.indexOf('unitsPerOrderUnit');
+  if (u >= 0) {
+    const w = normaliseHeader(headers[u]).match(/\b(box|carton|ctn|pack|bag|bundle|case|inner|outer|roll)\b/);
+    if (w) hints.packWord = w[1] === 'ctn' ? 'carton' : w[1];
+  }
+  return hints;
 }
 
 /** Scores how header-like a row is (number of distinct alias matches). */
@@ -419,19 +692,46 @@ export function sheetToTable(sheet: SheetData, headerRow: number): TableView {
   return { headers, rows };
 }
 
+/** Supplier stock columns: mapped as supplier's stock, or stock-like and left unmapped. */
 export function supplierStockColumns(headers: string[], mapping: ColumnMapping): string[] {
-  return headers.filter((h, i) => mapping[i] === null && isSupplierStockHeader(h));
+  return headers.filter((h, i) => mapping[i] === 'supplierStock' || (mapping[i] === null && isSupplierStockHeader(h)));
 }
 
 // ============================================================================
 // PDF tables
 // ============================================================================
 
-const PDF_SKIP_RE = /^(sub ?total|total|page \d+|page \d+ of \d+|continued|gst|freight total|balance)\b/i;
+export interface PdfLayoutStats {
+  /** Every text line in the PDF. */
+  sourceLines: number;
+  /** Lines that became product rows. */
+  productRows: number;
+  /** Wrapped description lines joined onto the product above. */
+  continuationLines: number;
+  /** Section headings (used as the category of the products below). */
+  headingLines: number;
+  /** Column-heading lines, including headings repeated on later pages. */
+  headerLines: number;
+  /** Totals, GST, notes, sign-off and page-footer lines. */
+  summaryLines: number;
+  /** Quote/customer details, addresses, dates and other page text outside the table. */
+  metadataLines: number;
+}
+
+/** Text that ends the product part of a page: totals, tax, notes, sign-off, page footers. */
+const SUMMARY_RE = /^(sub ?-?total\b|total\b|grand total\b|gst\b|tax (code|rate|invoice)\b|balance( due)?\b|freight total\b|comments?:|accepted (by|date)|note:|notes:|this (quote|quotation) is valid|prices? (are|is) valid|quotation continued|continued( on next page)?\b|page:?(\s*\d+(\s*of\s*\d+)?)?$|e\.?\s*&\s*o\.?\s*e)/i;
+const NUMERIC_CELL_RE = /^[$€£]?\s*-?[\d,]*\.?\d+\s*%?$/;
+
+const isNumericText = (t: string) => NUMERIC_CELL_RE.test(t.trim());
 
 /**
- * Converts positioned PDF text rows into a table by locating the header row
- * and assigning each cell to the header column it overlaps most.
+ * Converts positioned PDF text rows into a table:
+ *  - finds the column-heading row (merging headings split over two lines);
+ *  - ignores everything above the headings on each page (quote numbers,
+ *    customer details, addresses, repeated page headers);
+ *  - stops each page at totals / GST / notes / page footers;
+ *  - joins wrapped description lines onto their product and turns
+ *    stand-alone headings into a "Section" (category) column.
  * Returns null when no recognisable header exists.
  */
 export function pdfRowsToSheet(rows: PdfTextRow[]): { sheet: SheetData; notes: string[] } | null {
@@ -444,56 +744,187 @@ export function pdfRowsToSheet(rows: PdfTextRow[]): { sheet: SheetData; notes: s
   });
   if (headerIdx < 0 || bestScore < 2) return null;
 
-  const header = rows[headerIdx].cells;
-  const headerKey = header.map(c => normaliseHeader(c.text)).join('|');
-  const cols = header.map((c, i) => ({
-    x: c.x,
-    xEnd: Math.max(c.xEnd, i + 1 < header.length ? Math.min(header[i + 1].x - 2, c.x + (c.xEnd - c.x) * 3) : c.xEnd),
-  }));
-
-  const out: string[][] = [header.map(c => c.text)];
-  let skippedLines = 0;
-  let mergedCells = 0;
-  const lowConfidence: number[] = [];
-
-  for (let i = headerIdx + 1; i < rows.length; i++) {
+  // ---- Header columns, merging a heading split over two lines ("Qty." / "Ord.").
+  const main = rows[headerIdx];
+  type Col = { x: number; xEnd: number; text: string };
+  const cols: Col[] = main.cells.map(c => ({ x: c.x, xEnd: c.xEnd, text: c.text }));
+  const headerLineKeys = new Set<string>([main.cells.map(c => normaliseHeader(c.text)).join('|')]);
+  const headerLineIdx = new Set<number>([headerIdx]);
+  const mergeHeaderLine = (i: number, above: boolean): boolean => {
     const r = rows[i];
-    const texts = r.cells.map(c => normaliseHeader(c.text)).join('|');
-    if (texts === headerKey) continue; // header repeated on next page
-    const joined = r.cells.map(c => c.text).join(' ');
-    if (r.cells.length < 2 || PDF_SKIP_RE.test(joined.trim())) { skippedLines++; continue; }
+    if (!r || r.page !== main.page || Math.abs(r.y - main.y) > 12) return false;
+    if (r.cells.some(c => isNumericText(c.text) || SUMMARY_RE.test(c.text.trim()))) return false;
+    if (r.cells.some(c => c.text.trim().split(/\s+/).length > 3)) return false;
+    for (const cell of r.cells) {
+      const col = cols.find(c => Math.min(cell.xEnd, c.xEnd) - Math.max(cell.x, c.x) > 0);
+      if (col) col.text = above ? `${cell.text} ${col.text}` : `${col.text} ${cell.text}`;
+      else cols.push({ x: cell.x, xEnd: cell.xEnd, text: cell.text });
+    }
+    cols.sort((a, b) => a.x - b.x);
+    headerLineKeys.add(r.cells.map(c => normaliseHeader(c.text)).join('|'));
+    headerLineIdx.add(i);
+    return true;
+  };
+  for (let i = headerIdx - 1; i >= Math.max(0, headerIdx - 2) && mergeHeaderLine(i, true); i--) { /* merged */ }
+  for (let i = headerIdx + 1; i <= headerIdx + 2 && mergeHeaderLine(i, false); i++) { /* merged */ }
+  const firstDataIdx = Math.max(...headerLineIdx) + 1;
 
-    const cells: string[] = header.map(() => '');
+  const extents = cols.map((c, i) => ({
+    x: c.x,
+    xEnd: Math.max(c.xEnd, i + 1 < cols.length ? Math.min(cols[i + 1].x - 2, c.x + (c.xEnd - c.x) * 3) : c.xEnd),
+  }));
+  const headerTexts = cols.map(c => c.text);
+  const guess = aliasMapColumns(headerTexts);
+  let nameCol = guess.indexOf('name');
+  if (nameCol < 0) nameCol = guess.indexOf('description');
+  if (nameCol < 0) {
+    // Fall back to the widest heading.
+    nameCol = cols.reduce((best, c, i) => (c.xEnd - c.x > cols[best].xEnd - cols[best].x ? i : best), 0);
+  }
+  const codeCols = new Set(
+    guess.map((f, i) => (f === 'supplierCode' || f === 'barcode' || f === 'sku' ? i : -1)).filter(i => i >= 0),
+  );
+
+  // ---- Assign each line's cells to columns. Column -1 = text left of the first heading (line numbers).
+  type Placed = { cells: string[]; lead: string; collided: boolean };
+  const place = (r: PdfTextRow): Placed => {
+    const cells: string[] = cols.map(() => '');
+    let lead = '';
     let collided = false;
     for (const cell of r.cells) {
       let best = -1;
       let bestOverlap = 0;
-      cols.forEach((col, k) => {
+      extents.forEach((col, k) => {
         const overlap = Math.min(cell.xEnd, col.xEnd) - Math.max(cell.x, col.x);
         if (overlap > bestOverlap) { bestOverlap = overlap; best = k; }
       });
+      if (best < 0 && cell.xEnd < extents[0].x) { lead = lead ? `${lead} ${cell.text}` : cell.text; continue; }
       if (best < 0) {
         const centre = (cell.x + cell.xEnd) / 2;
         let bestDist = Infinity;
-        cols.forEach((col, k) => {
+        extents.forEach((col, k) => {
           const d = Math.abs(centre - (col.x + col.xEnd) / 2);
           if (d < bestDist) { bestDist = d; best = k; }
         });
       }
-      if (cells[best]) { cells[best] += ` ${cell.text}`; collided = true; mergedCells++; }
-      else cells[best] = cell.text;
+      if (cells[best]) {
+        // Two numbers in one column means the columns did not line up.
+        if (isNumericText(cells[best]) && isNumericText(cell.text)) collided = true;
+        cells[best] += ` ${cell.text}`;
+      } else cells[best] = cell.text;
     }
-    if (collided) lowConfidence.push(out.length);
-    out.push(cells);
+    return { cells, lead, collided };
+  };
+
+  // Pages after the first that repeat the column headings: everything above them is page header.
+  const headerRowOnPage = new Map<number, number>();
+  rows.forEach((r, i) => {
+    if (i < firstDataIdx || r.page === main.page || headerRowOnPage.has(r.page)) return;
+    if (r.cells.length >= 2 && headerLineKeys.has(r.cells.map(c => normaliseHeader(c.text)).join('|'))) headerRowOnPage.set(r.page, i);
+  });
+  const repeatsHeaders = headerRowOnPage.size > 0;
+
+  const stats: PdfLayoutStats = {
+    sourceLines: rows.length, productRows: 0, continuationLines: 0, headingLines: 0,
+    headerLines: headerLineIdx.size, summaryLines: 0, metadataLines: firstDataIdx - headerLineIdx.size,
+  };
+  const contextParts: string[] = rows.slice(0, headerIdx).filter((_, i) => !headerLineIdx.has(i)).map(r => r.cells.map(c => c.text).join(' '));
+
+  type Line = { i: number; page: number; y: number; placed: Placed; product: boolean; nameText: string; hasCode: boolean };
+  const candidates: Line[] = [];
+  let footerPage = -1;
+  for (let i = firstDataIdx; i < rows.length; i++) {
+    const r = rows[i];
+    const key = r.cells.map(c => normaliseHeader(c.text)).join('|');
+    if (headerLineKeys.has(key)) { stats.headerLines++; continue; }
+    const pageHeaderAt = headerRowOnPage.get(r.page);
+    if (r.page !== main.page && repeatsHeaders && (pageHeaderAt === undefined || i < pageHeaderAt)) {
+      stats.metadataLines++;
+      contextParts.push(r.cells.map(c => c.text).join(' '));
+      continue;
+    }
+    if (footerPage === r.page) { stats.metadataLines++; continue; }
+    const placed = place(r);
+    const nameText = placed.cells[nameCol] || '';
+    const hasNumeric = placed.cells.some((c, k) => k !== nameCol && c && isNumericText(c));
+    const summaryCell = r.cells.find(c => SUMMARY_RE.test(c.text.trim()));
+    if (summaryCell && !(placed.cells[nameCol] === summaryCell.text && hasNumeric && placed.cells.some((c, k) => codeCols.has(k) && c))) {
+      stats.summaryLines++;
+      footerPage = r.page;
+      contextParts.push(r.cells.map(c => c.text).join(' '));
+      continue;
+    }
+    const hasCode = placed.cells.some((c, k) => codeCols.has(k) && !!c);
+    candidates.push({ i, page: r.page, y: r.y, placed, product: !!nameText && (hasNumeric || hasCode), nameText, hasCode });
+  }
+
+  // Typical gap between product lines (for telling wrapped text from headings).
+  const gaps: number[] = [];
+  for (let k = 1; k < candidates.length; k++) {
+    const a = candidates[k - 1], b = candidates[k];
+    if (a.product && b.product && a.page === b.page) gaps.push(Math.abs(a.y - b.y));
+  }
+  gaps.sort((a, b) => a - b);
+  const pitch = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 16;
+
+  type OutRow = { cells: string[]; lead: string; section: string; collided: boolean; page: number; y: number };
+  const products: OutRow[] = [];
+  let section = '';
+  for (let k = 0; k < candidates.length; k++) {
+    const line = candidates[k];
+    if (line.product) {
+      products.push({ cells: [...line.placed.cells], lead: line.placed.lead, section, collided: line.placed.collided, page: line.page, y: line.y });
+      stats.productRows++;
+      continue;
+    }
+    const text = line.placed.cells.filter(Boolean).join(' ').trim();
+    const prev = products[products.length - 1];
+    const next = candidates.slice(k + 1).find(c => c.product && c.page === line.page);
+    const gapPrev = prev && prev.page === line.page ? Math.abs(prev.y - line.y) : Infinity;
+    const gapNext = next ? Math.abs(line.y - next.y) : Infinity;
+    const onlyTextColumns = line.placed.cells.every((c, k2) => !c || !codeCols.has(k2));
+    if (!text) { stats.metadataLines++; continue; }
+    if (prev && onlyTextColumns && gapPrev <= pitch * 1.25 && (next ? gapPrev <= gapNext + 2 : true)) {
+      // Wrapped description: join onto the product above.
+      prev.cells[nameCol] = `${prev.cells[nameCol]} ${text}`.trim();
+      stats.continuationLines++;
+    } else if (next && onlyTextColumns && text.split(/\s+/).length <= 6 && !/\d{4,}/.test(text)) {
+      // A heading directly above products: becomes their section/category.
+      section = text;
+      stats.headingLines++;
+    } else {
+      stats.metadataLines++;
+      contextParts.push(text);
+    }
+  }
+
+  const hasLead = products.some(p => p.lead);
+  const hasSection = products.some(p => p.section);
+  const header = [...(hasLead ? ['Line'] : []), ...headerTexts, ...(hasSection ? ['Section'] : [])];
+  const out: string[][] = [header];
+  const lowConfidence: number[] = [];
+  for (const p of products) {
+    if (p.collided) lowConfidence.push(out.length);
+    out.push([...(hasLead ? [p.lead] : []), ...p.cells, ...(hasSection ? [p.section] : [])]);
   }
 
   const notes: string[] = [];
   notes.push('Read from the PDF text layer — check a few rows against the original before importing.');
-  if (skippedLines) notes.push(`${skippedLines} line(s) that were not product rows (titles, totals, page footers) were left out.`);
-  if (mergedCells) notes.push(`${lowConfidence.length} row(s) had text that did not line up with a single column and need review.`);
-  return { sheet: { name: 'PDF', rows: out, lowConfidenceRows: lowConfidence }, notes };
+  const pages = new Set(rows.map(r => r.page)).size;
+  const leftOut = stats.metadataLines + stats.summaryLines + stats.headerLines;
+  notes.push(
+    `${stats.sourceLines} text lines on ${pages} page${pages === 1 ? '' : 's'}: ${stats.productRows} product row${stats.productRows === 1 ? '' : 's'}` +
+      (stats.continuationLines ? `, ${stats.continuationLines} wrapped description line${stats.continuationLines === 1 ? '' : 's'} joined` : '') +
+      (stats.headingLines ? `, ${stats.headingLines} section heading${stats.headingLines === 1 ? '' : 's'} used as categories` : '') +
+      (leftOut ? `, ${leftOut} non-product line${leftOut === 1 ? '' : 's'} left out (column headings, quote and customer details, totals, GST, notes, page footers)` : '') +
+      '.',
+  );
+  if (lowConfidence.length) notes.push(`${lowConfidence.length} row(s) had numbers that did not line up with a single column and need review.`);
+  return {
+    sheet: { name: 'PDF', rows: out, lowConfidenceRows: lowConfidence, layout: stats, contextText: contextParts.join(' ').slice(0, 6000) },
+    notes,
+  };
 }
-
 
 // ============================================================================
 // Value parsing
@@ -511,7 +942,71 @@ export function parseMoney(raw: string | undefined): { value?: number; issue?: '
   if (!Number.isFinite(n)) return { issue: 'unreadable' };
   if (n < 0) return { issue: 'negative' };
   if (n === 0) return { issue: 'zero' };
-  return { value: Math.round(n * 10000) / 10000 };
+  // 6 decimals: keeps low-cost unit prices such as $0.01770 or $0.04873 exact.
+  return { value: round6(n) };
+}
+
+export function round6(n: number): number {
+  return Math.round(n * 1e6) / 1e6;
+}
+
+export interface LineCheckInput {
+  quantity?: number;
+  price?: number;
+  /** Known price basis (e.g. 100 for "per 100"); omit to let the check try 1, 100 and 1,000. */
+  basis?: number;
+  discountPercent?: number;
+  lineTotal?: number;
+  lineTotalIncGst?: number;
+}
+
+export interface LineCheck {
+  status: 'match' | 'mismatch' | 'not-checked';
+  /** Basis that makes the arithmetic work. */
+  basis?: number;
+  /** The total only works with the discount applied. */
+  discountApplied?: boolean;
+  /** The total only works if the price includes GST. */
+  incGst?: boolean;
+  expected?: number;
+  shown?: number;
+}
+
+const nearMoney = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.02, Math.abs(b) * 0.005);
+
+/**
+ * Checks quantity × price ÷ basis × (1 − discount) against the line total.
+ * Never guesses: it only reports which reading (if any) the document's own
+ * arithmetic supports.
+ */
+export function reconcileLine(i: LineCheckInput): LineCheck {
+  const q = i.quantity;
+  const p = i.price;
+  if (!q || !p || q <= 0 || p <= 0) return { status: 'not-checked' };
+  const ex = i.lineTotal;
+  const inc = i.lineTotalIncGst;
+  if (ex === undefined && inc === undefined) return { status: 'not-checked' };
+  const d = i.discountPercent && i.discountPercent > 0 && i.discountPercent < 100 ? i.discountPercent : 0;
+  const bases = i.basis ? [i.basis] : [1, 100, 1000];
+  const factors = d ? [1 - d / 100, 1] : [1];
+  for (const b of bases) {
+    for (const f of factors) {
+      const exp = (q * p * f) / b;
+      if (ex !== undefined ? nearMoney(exp, ex) : nearMoney(exp * 1.1, inc as number)) {
+        return { status: 'match', basis: b, discountApplied: f !== 1, expected: exp, shown: ex ?? inc };
+      }
+    }
+  }
+  for (const b of bases) {
+    for (const f of factors) {
+      const exp = (q * p * f) / b;
+      if (ex !== undefined ? nearMoney(exp, ex * 1.1) : nearMoney(exp, inc as number)) {
+        return { status: 'match', basis: b, discountApplied: f !== 1, incGst: true, expected: exp, shown: ex ?? inc };
+      }
+    }
+  }
+  const exp = (q * p * factors[0]) / bases[0];
+  return { status: 'mismatch', basis: i.basis, expected: exp, shown: ex ?? inc };
 }
 
 const UNIT_WORDS: Record<string, string> = {
@@ -548,6 +1043,11 @@ export function parsePriceBasis(raw: string | undefined): BasisParse {
   if (word) {
     unit = UNIT_WORDS[word];
     if (!unit) return { ambiguous: `"${raw}" is not a recognised price basis` };
+  }
+  // "4LTR", "1LTR", "20KG" written without "per": a container size, not a price per
+  // litre — confirm. "per kg" / "/L" stay a genuine measure basis.
+  if (qty !== undefined && /^\d/.test(s) && (unit === 'litre' || unit === 'kg')) {
+    return { quantity: 1, unit: 'each', interpreted: `"${(raw || '').trim()}" read as one ${(raw || '').trim()} container (price per container)` };
   }
   if (qty !== undefined && (!Number.isFinite(qty) || qty <= 0)) return { ambiguous: `"${raw}" is not a valid price basis` };
   if (qty === undefined && !unit) return { ambiguous: `"${raw}" is not a recognised price basis` };
@@ -596,6 +1096,7 @@ export type IssueLevel = 'error' | 'review' | 'info';
 
 export type IssueCode =
   | 'missing-name'
+  | 'not-a-product'
   | 'freight'
   | 'zero-price'
   | 'negative-price'
@@ -604,8 +1105,17 @@ export type IssueCode =
   | 'missing-price'
   | 'ambiguous-basis'
   | 'interpreted-basis'
+  | 'basis-from-total'
+  | 'total-mismatch'
+  | 'discount-applied'
+  | 'discount-unclear'
+  | 'price-inc-gst'
+  | 'gst-check'
+  | 'pack-hint'
   | 'pack-unclear'
   | 'pack-mismatch'
+  | 'unit-mismatch'
+  | 'placeholder-code'
   | 'derived-order-unit'
   | 'missing-identifier'
   | 'name-looks-like-code'
@@ -629,6 +1139,20 @@ export interface SupplierContext {
   id?: string;
 }
 
+/** Quote / reference values: shown and used for checks, never saved as product data. */
+export interface DraftReference {
+  customerCode?: string;
+  quotedQuantity?: number;
+  discountPercent?: number;
+  /** Price as printed, before any discount or GST conversion. */
+  listPrice?: number;
+  lineTotal?: number;
+  gstAmount?: number;
+  lineTotalIncGst?: number;
+  supplierStock?: number;
+  check?: LineCheck;
+}
+
 export interface CatalogueDraft {
   key: string;
   rowNumber: number;
@@ -639,18 +1163,54 @@ export interface CatalogueDraft {
   /** Whether the row is selected for import by default. */
   includeByDefault: boolean;
   lowConfidence: boolean;
+  reference: DraftReference;
+  /** True when the user edited this row. */
+  edited?: boolean;
 }
 
-const FREIGHT_RE = /\b(freight|delivery|delivery charge|shipping|cartage|surcharge|courier|postage|fuel levy|handling fee|handling charge|small order fee|min(imum)? order (fee|charge))\b/i;
+/** Clear non-product charges: blocked from import. */
+const CHARGE_RE = /\b(freight|cartage|courier|postage|fuel levy|surcharge|delivery (charge|fee)|handling (fee|charge)|small order (fee|charge)|min(imum)? order (fee|charge)|restocking fee|pallet (charge|fee)|admin(istration)? fee|shipping (charge|fee))\b/i;
+/** Words that only suggest a charge: flagged for review. */
+const MAYBE_CHARGE_RE = /\b(delivery|shipping|handling)\b/i;
+/** Total / tax lines that slipped into the table. */
+/** Codes suppliers reuse for unrelated non-catalogue lines. */
+export const PLACEHOLDER_CODE_RE = /^(sundry|sundries|misc\d*|miscellaneous|non[- ]?stock|special|specials|n\/?a|tba|tbc|various|generic|-+|\.+|\*+)$/i;
+const SUMMARY_NAME_RE = /^(sub ?-?total|total|grand total|gst|tax|freight total|balance|amount due|rounding|invoice total)\b/i;
 
 export function isFreightLine(values: Partial<Record<TargetField, string>>): boolean {
-  return FREIGHT_RE.test(`${values.name || ''} ${values.supplierCode || ''}`);
+  const t = `${values.name || ''} ${values.supplierCode || ''}`;
+  return CHARGE_RE.test(t) || MAYBE_CHARGE_RE.test(t);
 }
 
 export interface DraftContext {
   source: CatalogueSource;
   supplier: SupplierContext;
   lowConfidence?: boolean;
+  hints?: ColumnHints;
+}
+
+const fmtMoney = (n: number) => {
+  if (n >= 1 && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6) return `$${n.toFixed(2)}`;
+  const s = n.toFixed(5).replace(/0+$/, '');
+  const [, dec = ''] = s.split('.');
+  return `$${dec.length < 2 ? n.toFixed(2) : s}`;
+};
+const fmtQty = (n: number) => n.toLocaleString('en-AU', { maximumFractionDigits: 3 });
+
+function readNumber(raw: string | undefined): number | undefined {
+  const s = (raw || '').trim().replace(/%$/, '');
+  if (!s) return undefined;
+  const m = parseMoney(s);
+  if (m.value !== undefined) return m.value;
+  return m.issue === 'zero' ? 0 : undefined;
+}
+
+/** Pack hints written into descriptions, e.g. "12/Ctn", "20/Ct", "100/box". */
+function packHintFromName(name: string): { quantity: number; word: string } | undefined {
+  const m = name.match(/\b(\d{1,5})\s*\/\s*(ctn|ct|carton|box|bx|pk|pack|bag|case)\b/i);
+  if (!m) return undefined;
+  const w = m[2].toLowerCase();
+  return { quantity: parseInt(m[1], 10), word: w.startsWith('c') && w !== 'case' ? 'carton' : UNIT_WORDS[w] ?? w };
 }
 
 /** Builds one validated draft from raw (editable) field values. */
@@ -661,25 +1221,61 @@ export function buildDraft(
   ctx: DraftContext,
 ): CatalogueDraft {
   const v = (f: TargetField) => (values[f] || '').trim();
+  const hints = ctx.hints ?? {};
   const issues: DraftIssue[] = [];
   const name = v('name');
+  const rawCode = v('supplierCode') || undefined;
+  // Generic codes ("SUNDRY", "MISC", "NON-STOCK") are shared by unrelated lines: they are not
+  // product identifiers, so they must not drive matching or duplicate detection.
+  const placeholderCode = rawCode && PLACEHOLDER_CODE_RE.test(rawCode) ? rawCode : undefined;
+  const supplierCode = placeholderCode ? undefined : rawCode;
+  if (placeholderCode) {
+    issues.push({ level: 'info', code: 'placeholder-code', message: `Code "${placeholderCode}" is a general sundry code, not a product code — matched by name instead.` });
+  }
   if (!name) issues.push({ level: 'error', code: 'missing-name', message: 'No product name — this row cannot be imported.' });
-  else if (/^[\d\s\-./]+$/.test(name)) issues.push({ level: 'review', code: 'name-looks-like-code', message: 'The name looks like a number or code — check the column mapping.' });
+  else if (!supplierCode && SUMMARY_NAME_RE.test(name)) {
+    issues.push({ level: 'error', code: 'not-a-product', message: 'This is a total or tax line, not a product.' });
+  } else if (/^[\d\s\-./]+$/.test(name)) issues.push({ level: 'review', code: 'name-looks-like-code', message: 'The name looks like a number or code — check the column mapping.' });
 
-  const freight = isFreightLine(values);
-  if (freight) issues.push({ level: 'review', code: 'freight', message: 'Looks like a freight / delivery charge, not a stocked product.' });
+  const chargeText = `${name} ${supplierCode || ''}`;
+  const strongCharge = CHARGE_RE.test(chargeText);
+  const weakCharge = !strongCharge && MAYBE_CHARGE_RE.test(chargeText);
+  if (strongCharge) {
+    issues.push({ level: 'error', code: 'freight', message: 'Freight / delivery charge — not a product, so it cannot be imported. Edit the name if this really is a product.' });
+  } else if (weakCharge) {
+    issues.push({ level: 'review', code: 'freight', message: 'Might be a delivery or handling charge rather than a stocked product.' });
+  }
+  const freight = strongCharge || weakCharge;
 
-  // Price
+  // ---- Reference values (quote fields)
+  const reference: DraftReference = {};
+  if (v('customerCode')) reference.customerCode = v('customerCode');
+  reference.quotedQuantity = readNumber(v('quotedQuantity'));
+  reference.discountPercent = readNumber(v('discountPercent'));
+  reference.lineTotal = readNumber(v('lineTotal'));
+  reference.gstAmount = readNumber(v('gstAmount'));
+  reference.lineTotalIncGst = readNumber(v('lineTotalIncGst'));
+  reference.supplierStock = readNumber(v('supplierStock'));
+
+  // ---- Price
   let purchasePrice: number | undefined;
-  const price = parseMoney(v('purchasePrice'));
+  let priceRaw = v('purchasePrice');
+  let incGstPrice = !!hints.priceIncGst && !!priceRaw;
+  if (!priceRaw && v('purchasePriceIncGst')) { priceRaw = v('purchasePriceIncGst'); incGstPrice = true; }
+  const price = parseMoney(priceRaw);
   if (price.value !== undefined) purchasePrice = price.value;
   else if (price.issue === 'zero') issues.push({ level: 'review', code: 'zero-price', message: 'Price is $0 — left blank rather than imported as free.' });
   else if (price.issue === 'negative') issues.push({ level: 'review', code: 'negative-price', message: 'Negative price (credit or discount line?) — left blank.' });
   else if (price.issue === 'poa') issues.push({ level: 'review', code: 'poa', message: 'Price on application — no price imported.' });
-  else if (price.issue === 'unreadable') issues.push({ level: 'review', code: 'unreadable-price', message: `Price "${v('purchasePrice')}" could not be read — left blank.` });
+  else if (price.issue === 'unreadable') issues.push({ level: 'review', code: 'unreadable-price', message: `Price "${priceRaw}" could not be read — left blank.` });
   else if (name && !freight) issues.push({ level: 'info', code: 'missing-price', message: 'No price — orders will show no line total until one is added.' });
+  if (purchasePrice !== undefined) reference.listPrice = purchasePrice;
+  if (purchasePrice !== undefined && incGstPrice) {
+    purchasePrice = round6(purchasePrice / 1.1);
+    issues.push({ level: 'review', code: 'price-inc-gst', message: `Price includes GST — converted to ${fmtMoney(purchasePrice)} ex GST (÷ 1.1). Confirm.` });
+  }
 
-  // Pack / order unit
+  // ---- Pack / order unit
   let orderUnit = v('orderUnit') || undefined;
   let unitsPerOrderUnit: number | undefined;
   const packCol = parseCount(v('unitsPerOrderUnit'));
@@ -697,41 +1293,133 @@ export function buildDraft(
       issues.push({ level: 'review', code: 'pack-unclear', message: `Pack quantity in "${orderUnit}" is unclear — set it to order correctly.` });
     }
   } else if (unitsPerOrderUnit !== undefined && unitsPerOrderUnit > 1) {
-    orderUnit = `pack of ${unitsPerOrderUnit.toLocaleString('en-AU')}`;
+    orderUnit = `${hints.packWord ?? 'pack'} of ${unitsPerOrderUnit.toLocaleString('en-AU')}`;
     issues.push({ level: 'info', code: 'derived-order-unit', message: `Order unit set to "${orderUnit}" from the pack quantity.` });
   }
 
-  // Price basis
+  // ---- Price basis
   let priceBasisQuantity: number | undefined;
   let priceBasisUnit: string | undefined;
+  let basisKnown = false;
+  let basisAmbiguous = false;
   const basisRaw = v('priceBasisQuantity');
   if (basisRaw) {
     const b = parsePriceBasis(basisRaw);
     if (b.ambiguous) {
-      issues.push({ level: 'review', code: 'ambiguous-basis', message: `Price basis unclear: ${b.ambiguous}. Price kept, basis needs confirming.` });
+      basisAmbiguous = true;
     } else {
       priceBasisQuantity = b.quantity;
       priceBasisUnit = b.unit;
+      basisKnown = true;
       if (b.interpreted) issues.push({ level: 'review', code: 'interpreted-basis', message: `${b.interpreted} — confirm.` });
     }
+  } else if (hints.priceBasis?.quantity) {
+    priceBasisQuantity = hints.priceBasis.quantity;
+    priceBasisUnit = hints.priceBasis.unit;
+    basisKnown = true;
   }
   const basisUnitRaw = v('priceBasisUnit');
   if (basisUnitRaw) priceBasisUnit = UNIT_WORDS[basisUnitRaw.toLowerCase()] ?? basisUnitRaw;
-  if (purchasePrice !== undefined && !basisRaw && unitsPerOrderUnit !== undefined && unitsPerOrderUnit > 1) {
+
+  // ---- Check the price against the document's own arithmetic
+  const listPrice = reference.listPrice;
+  const check = reconcileLine({
+    quantity: reference.quotedQuantity,
+    price: listPrice,
+    basis: basisKnown ? priceBasisQuantity : undefined,
+    discountPercent: reference.discountPercent,
+    lineTotal: reference.lineTotal,
+    lineTotalIncGst: reference.lineTotal === undefined ? reference.lineTotalIncGst : undefined,
+  });
+  reference.check = check;
+  const disc = reference.discountPercent ?? 0;
+  if (check.status === 'match' && listPrice !== undefined) {
+    const shown = fmtMoney(check.shown ?? 0);
+    if (!basisKnown && check.basis && check.basis !== 1) {
+      priceBasisQuantity = check.basis;
+      priceBasisUnit = priceBasisUnit ?? 'each';
+      basisKnown = true;
+      issues.push({ level: 'info', code: 'basis-from-total', message: `Priced per ${fmtQty(check.basis)} — worked out from the line total ${shown}.` });
+      basisAmbiguous = false;
+    }
+    if (check.discountApplied && !incGstPrice) {
+      purchasePrice = round6(listPrice * (1 - disc / 100));
+      issues.push({ level: 'info', code: 'discount-applied', message: `${fmtQty(disc)}% discount applied: listed ${fmtMoney(listPrice)} → your price ${fmtMoney(purchasePrice)} (matches the line total ${shown}).` });
+    } else if (disc > 0) {
+      issues.push({ level: 'review', code: 'discount-unclear', message: `A ${fmtQty(disc)}% discount is shown, but the line total matches the undiscounted price — check which price is yours.` });
+    }
+    if (check.incGst && !incGstPrice && purchasePrice !== undefined) {
+      purchasePrice = round6(purchasePrice / 1.1);
+      issues.push({ level: 'review', code: 'price-inc-gst', message: `The line total suggests this price includes GST — converted to ${fmtMoney(purchasePrice)} ex GST. Confirm.` });
+    }
+  } else if (check.status === 'mismatch') {
+    const alt = basisKnown
+      ? reconcileLine({
+          quantity: reference.quotedQuantity, price: listPrice, discountPercent: reference.discountPercent,
+          lineTotal: reference.lineTotal, lineTotalIncGst: reference.lineTotal === undefined ? reference.lineTotalIncGst : undefined,
+        })
+      : { status: 'mismatch' as const };
+    const msg = alt.status === 'match' && alt.basis && alt.basis !== priceBasisQuantity
+      ? `The line total fits a price per ${fmtQty(alt.basis)}, but the price basis says per ${fmtQty(priceBasisQuantity ?? 1)}. Check the price basis.`
+      : `Quantity × price ${disc ? '× discount ' : ''}does not equal the line total (works out to ${fmtMoney(check.expected ?? 0)}; the document shows ${fmtMoney(check.shown ?? 0)}). Check the price, price basis and discount.`;
+    issues.push({ level: 'review', code: 'total-mismatch', message: msg });
+  } else if (disc > 0 && listPrice !== undefined) {
+    issues.push({ level: 'review', code: 'discount-unclear', message: `A ${fmtQty(disc)}% discount is shown — it is not clear whether ${fmtMoney(listPrice)} is before or after the discount. Price kept as listed.` });
+  }
+  if (basisAmbiguous) {
+    const b = parsePriceBasis(basisRaw);
+    issues.push({ level: 'review', code: 'ambiguous-basis', message: `Price basis unclear: ${b.ambiguous}. Price kept, basis needs confirming.` });
+  }
+  if (reference.lineTotal !== undefined && reference.gstAmount !== undefined && reference.lineTotal > 0) {
+    if (reference.gstAmount === 0) issues.push({ level: 'info', code: 'gst-check', message: 'No GST charged on this line.' });
+    else if (!nearMoney(reference.gstAmount, reference.lineTotal * 0.1)) {
+      issues.push({ level: 'info', code: 'gst-check', message: `GST ${fmtMoney(reference.gstAmount)} is not 10% of ${fmtMoney(reference.lineTotal)} — prices kept ex GST as listed.` });
+    }
+  }
+
+  // Price per item or per pack? Only flag when the document doesn't say.
+  if (purchasePrice !== undefined && !basisRaw && !basisKnown && unitsPerOrderUnit !== undefined && unitsPerOrderUnit > 1) {
     issues.push({
       level: 'review',
       code: 'ambiguous-basis',
-      message: `Is $${purchasePrice} per item or per ${orderUnit}? Set "Price per" to confirm.`,
+      message: `Is ${fmtMoney(purchasePrice)} per item or per ${orderUnit}? Set "Price per" to confirm.`,
     });
   }
+  const hint = name ? packHintFromName(name) : undefined;
+  if (hint && unitsPerOrderUnit === undefined) {
+    if (basisKnown || basisRaw) {
+      issues.push({
+        level: 'info',
+        code: 'pack-hint',
+        message: `Description mentions ${hint.quantity} per ${hint.word}; the price is per ${priceBasisQuantity && priceBasisQuantity !== 1 ? `${fmtQty(priceBasisQuantity)} ` : ''}${priceBasisUnit ?? 'each'} as listed, so the ${hint.word} size was not applied.`,
+      });
+    } else if (purchasePrice !== undefined) {
+      issues.push({
+        level: 'review',
+        code: 'ambiguous-basis',
+        message: `Description mentions ${hint.quantity} per ${hint.word} but no price unit is given — is ${fmtMoney(purchasePrice)} per item or per ${hint.word}?`,
+      });
+    }
+  }
 
-  const stockUnit = v('stockUnit') ? (UNIT_WORDS[v('stockUnit').toLowerCase()] ?? v('stockUnit')) : undefined;
+  let stockUnit = v('stockUnit') ? (UNIT_WORDS[v('stockUnit').toLowerCase()] ?? v('stockUnit')) : undefined;
+  // Priced per roll / pack / pair / metre with no pack size: that is the unit you buy and count.
+  if (!stockUnit && unitsPerOrderUnit === undefined && priceBasisQuantity === 1 && priceBasisUnit && priceBasisUnit !== 'each') {
+    stockUnit = priceBasisUnit;
+  }
+  if (priceBasisUnit && ['metre', 'kg', 'litre'].includes(priceBasisUnit) && unitsPerOrderUnit !== undefined && unitsPerOrderUnit > 1
+    && stockUnit !== priceBasisUnit && !/\b(m|lm|metres?|kg|l|litres?)\b/i.test(orderUnit || '')) {
+    issues.push({
+      level: 'review',
+      code: 'unit-mismatch',
+      message: `Priced per ${priceBasisUnit}, but the pack quantity (${fmtQty(unitsPerOrderUnit)}) isn't in ${priceBasisUnit}s — confirm how this is ordered and counted.`,
+    });
+  }
 
   const barcode = v('barcode').replace(/\s+/g, '');
   if (barcode && !/^[0-9A-Za-z\-]{4,32}$/.test(barcode)) {
     issues.push({ level: 'review', code: 'invalid-barcode', message: `Barcode "${v('barcode')}" looks invalid.` });
   }
-  const supplierCode = v('supplierCode') || undefined;
   if (name && !supplierCode && !barcode) {
     issues.push({ level: 'info', code: 'missing-identifier', message: 'No supplier code or barcode — matched by name only.' });
   }
@@ -743,7 +1431,7 @@ export function buildDraft(
   const sell = parseMoney(v('sellPrice'));
 
   if (ctx.source === 'pdf') {
-    if (ctx.lowConfidence) issues.push({ level: 'review', code: 'pdf-low-confidence', message: 'Text in this PDF row did not line up with the columns — check every value.' });
+    if (ctx.lowConfidence) issues.push({ level: 'review', code: 'pdf-low-confidence', message: 'Numbers in this PDF row did not line up with the columns — check every value.' });
     else issues.push({ level: 'info', code: 'pdf-source', message: 'Read from a PDF — check against the original.' });
   }
 
@@ -755,7 +1443,7 @@ export function buildDraft(
     id: '',
     name,
     description: v('description') || name,
-    sku: v('sku') || supplierCode || (name ? generateSKU(name) : ''),
+    sku: v('sku') || reference.customerCode || supplierCode || (name ? generateSKU(name) : ''),
     // Left empty for matching; a barcode is generated only at insert time.
     barcode,
     category: v('category') || 'Uncategorized',
@@ -764,7 +1452,7 @@ export function buildDraft(
     supplierId: ctx.supplier.id,
     price: sell.value ?? 0,
     // Legacy cost per stock unit, derived only from a real purchase price.
-    cost: purchasePrice !== undefined ? Math.round((purchasePrice / basisQty) * 10000) / 10000 : 0,
+    cost: purchasePrice !== undefined ? round6(purchasePrice / basisQty) : 0,
     currentStock: typeof currentStock === 'number' ? currentStock : 0,
     minStock: typeof minStock === 'number' ? minStock : 0,
     unit: stockUnit || 'each',
@@ -792,30 +1480,54 @@ export function buildDraft(
     status,
     includeByDefault: status === 'ready',
     lowConfidence: !!ctx.lowConfidence,
+    reference,
   };
 }
 
-/** Builds drafts for every data row of a table using the column mapping. */
+/** Row edits kept separately from the file so mapping changes never lose them. */
+export type DraftOverrides = Record<string, Partial<Record<TargetField, string>>>;
+
+/** Stable key for a table row. */
+export const draftKey = (rowNumber: number) => `r${rowNumber}`;
+
+/** Raw field values for one table row under a mapping. */
+export function rowValues(
+  cells: string[],
+  mapping: ColumnMapping,
+  supplier: SupplierContext,
+): Partial<Record<TargetField, string>> {
+  const values: Partial<Record<TargetField, string>> = {};
+  mapping.forEach((field, col) => {
+    if (!field) return;
+    // The selected supplier record wins over any supplier column in the file.
+    if ((field === 'supplier' || field === 'supplierEmail') && supplier.name) return;
+    const cell = cells[col] ?? '';
+    if (cell) values[field] = values[field] ? `${values[field]} ${cell}` : cell;
+  });
+  return values;
+}
+
+/** Builds drafts for every data row of a table using the column mapping (and any user edits). */
 export function buildDrafts(
   table: TableView,
   mapping: ColumnMapping,
   ctx: Omit<DraftContext, 'lowConfidence'>,
   sheet?: SheetData,
+  overrides: DraftOverrides = {},
 ): CatalogueDraft[] {
   const low = new Set(sheet?.lowConfidenceRows ?? []);
-  return table.rows.map((row, i) => {
-    const values: Partial<Record<TargetField, string>> = {};
-    mapping.forEach((field, col) => {
-      if (!field) return;
-      // The selected supplier record wins over any supplier column in the file.
-      if ((field === 'supplier' || field === 'supplierEmail') && ctx.supplier.name) return;
-      const cell = row.cells[col] ?? '';
-      if (cell) values[field] = values[field] ? `${values[field]} ${cell}` : cell;
-    });
-    return buildDraft(`r${row.rowNumber}-${i}`, row.rowNumber, values, {
+  const hints = ctx.hints ?? columnHints(table.headers, mapping);
+  return table.rows.map(row => {
+    const key = draftKey(row.rowNumber);
+    const edited = overrides[key];
+    const values = edited ? { ...edited } : rowValues(row.cells, mapping, ctx.supplier);
+    const d = buildDraft(key, row.rowNumber, values, {
       ...ctx,
-      lowConfidence: low.has(row.rowNumber - 1),
+      hints,
+      // Edited rows have been checked by the user.
+      lowConfidence: !edited && low.has(row.rowNumber - 1),
     });
+    return edited ? { ...d, edited: true } : d;
   });
 }
 
@@ -878,4 +1590,192 @@ export function summariseReview(rows: ReviewedDraft[]): ReviewSummary {
     missingInfo: rows.filter(r => r.importable && r.issues.some(i => i.level === 'info' && (i.code === 'missing-price' || i.code === 'missing-identifier'))).length,
     invalid: rows.filter(r => r.category === 'invalid').length,
   };
+}
+
+// ============================================================================
+// Selection and exclusion (session-only: excluding never deletes anything)
+// ============================================================================
+
+export interface ReviewSelection {
+  selected: ReadonlySet<string>;
+  excluded: ReadonlySet<string>;
+}
+
+export const emptySelection = (): ReviewSelection => ({ selected: new Set(), excluded: new Set() });
+
+/** Rows that bulk actions may ever select: importable and not excluded. */
+const selectable = (r: ReviewedDraft, sel: ReviewSelection) => r.importable && !sel.excluded.has(r.key);
+
+/** Adds default selections (ready rows) for rows not seen before; keeps every existing choice. */
+export function withDefaultSelection(rows: ReviewedDraft[], sel: ReviewSelection, seen: ReadonlySet<string>): ReviewSelection {
+  const selected = new Set(sel.selected);
+  for (const r of rows) if (!seen.has(r.key) && r.includeByDefault && selectable(r, sel)) selected.add(r.key);
+  return { selected, excluded: sel.excluded };
+}
+
+export function toggleSelected(sel: ReviewSelection, key: string): ReviewSelection {
+  const selected = new Set(sel.selected);
+  if (selected.has(key)) selected.delete(key);
+  else if (!sel.excluded.has(key)) selected.add(key);
+  return { selected, excluded: sel.excluded };
+}
+
+/** Adds every Ready row (keeps other selections). */
+export function selectAllReady(rows: ReviewedDraft[], sel: ReviewSelection): ReviewSelection {
+  const selected = new Set(sel.selected);
+  for (const r of rows) if (r.category === 'ready' && selectable(r, sel)) selected.add(r.key);
+  return { selected, excluded: sel.excluded };
+}
+
+/**
+ * Selects every importable row that is not excluded — Ready and Needs Review.
+ * Never selects existing products, in-file duplicates, conflicts or rows that cannot be imported.
+ */
+export function selectAllRemaining(rows: ReviewedDraft[], sel: ReviewSelection): ReviewSelection {
+  const selected = new Set<string>();
+  for (const r of rows) if (selectable(r, sel)) selected.add(r.key);
+  return { selected, excluded: sel.excluded };
+}
+
+/** Clears the selection; exclusions are kept. */
+export function deselectAll(sel: ReviewSelection): ReviewSelection {
+  return { selected: new Set(), excluded: sel.excluded };
+}
+
+export function excludeRows(sel: ReviewSelection, keys: string[]): ReviewSelection {
+  const selected = new Set(sel.selected);
+  const excluded = new Set(sel.excluded);
+  for (const k of keys) { excluded.add(k); selected.delete(k); }
+  return { selected, excluded };
+}
+
+/** Restored rows come back unselected. */
+export function restoreRows(sel: ReviewSelection, keys: string[]): ReviewSelection {
+  const excluded = new Set(sel.excluded);
+  for (const k of keys) excluded.delete(k);
+  return { selected: sel.selected, excluded };
+}
+
+/** Rows that will actually be imported. */
+export function selectedForImport(rows: ReviewedDraft[], sel: ReviewSelection): ReviewedDraft[] {
+  return rows.filter(r => selectable(r, sel) && sel.selected.has(r.key));
+}
+
+export type ReviewBucket = 'ready' | 'review' | 'existing' | 'cannot' | 'excluded';
+
+/** One bucket per row: excluded wins, then existing/duplicate/conflict, then validation. */
+export function bucketOf(r: ReviewedDraft, sel: ReviewSelection): ReviewBucket {
+  if (sel.excluded.has(r.key)) return 'excluded';
+  if (r.category === 'existing' || r.category === 'conflict') return 'existing';
+  if (r.category === 'invalid') return 'cannot';
+  return r.category === 'review' ? 'review' : 'ready';
+}
+
+export interface ReviewCounts {
+  /** Lines in the source (PDF text lines, or spreadsheet rows including headings). */
+  sourceRows: number;
+  /** Rows recognised as products. */
+  productRows: number;
+  ready: number;
+  review: number;
+  /** Already in your catalogue, repeated in the file, or conflicting with an existing product. */
+  existing: number;
+  excluded: number;
+  cannotImport: number;
+  selected: number;
+}
+
+export function countReview(rows: ReviewedDraft[], sel: ReviewSelection, sourceRows: number): ReviewCounts {
+  const c: ReviewCounts = { sourceRows, productRows: rows.length, ready: 0, review: 0, existing: 0, excluded: 0, cannotImport: 0, selected: 0 };
+  for (const r of rows) {
+    const b = bucketOf(r, sel);
+    if (b === 'ready') c.ready++;
+    else if (b === 'review') c.review++;
+    else if (b === 'existing') c.existing++;
+    else if (b === 'excluded') c.excluded++;
+    else c.cannotImport++;
+  }
+  c.selected = selectedForImport(rows, sel).length;
+  return c;
+}
+
+/** Source line count for a sheet: PDF text lines, or every spreadsheet row. */
+export function sourceRowCount(sheet: SheetData | undefined): number {
+  if (!sheet) return 0;
+  return sheet.layout?.sourceLines ?? sheet.rows.length;
+}
+
+// ============================================================================
+// Import accounting (completion summary)
+// ============================================================================
+
+export interface SaveOutcome {
+  imported: number;
+  skippedAsExisting: number;
+  failed: number;
+}
+
+export interface ImportAccounting {
+  sourceRows: number;
+  productRows: number;
+  selected: number;
+  /** Saved as new products. */
+  imported: number;
+  /** Selected, but found to already exist when saving. */
+  existingAtSave: number;
+  /** Selected, but the save failed. */
+  saveFailed: number;
+  /** Selected, but never attempted (save stopped early). */
+  notAttempted: number;
+  /** Already in the catalogue / duplicates / conflicts at review. */
+  existingSkipped: number;
+  userExcluded: number;
+  /** Failed validation (no name, total lines, freight charges). */
+  cannotImport: number;
+  /** Importable but left unticked. */
+  notSelected: number;
+}
+
+/**
+ * Accounts for every recognised product row exactly once. Must be computed
+ * from the review state captured BEFORE saving (after saving, imported rows
+ * match themselves and would be miscounted as "existing").
+ */
+export function buildImportAccounting(
+  rows: ReviewedDraft[],
+  sel: ReviewSelection,
+  sourceRows: number,
+  outcome: SaveOutcome,
+): ImportAccounting {
+  const counts = countReview(rows, sel, sourceRows);
+  const selected = counts.selected;
+  const imported = Math.min(outcome.imported, selected);
+  const existingAtSave = Math.min(outcome.skippedAsExisting, selected - imported);
+  const saveFailed = Math.min(outcome.failed, selected - imported - existingAtSave);
+  return {
+    sourceRows,
+    productRows: rows.length,
+    selected,
+    imported,
+    existingAtSave,
+    saveFailed,
+    notAttempted: selected - imported - existingAtSave - saveFailed,
+    existingSkipped: counts.existing,
+    userExcluded: counts.excluded,
+    cannotImport: counts.cannotImport,
+    notSelected: counts.ready + counts.review - selected,
+  };
+}
+
+// ============================================================================
+// Workflow navigation
+// ============================================================================
+
+export type ImportStep = 'supplier' | 'file' | 'columns' | 'review';
+export const IMPORT_STEPS: ImportStep[] = ['supplier', 'file', 'columns', 'review'];
+
+/** The stage Back returns to; null on the first stage (Back then leaves the workflow). */
+export function stepBefore(step: ImportStep): ImportStep | null {
+  const i = IMPORT_STEPS.indexOf(step);
+  return i > 0 ? IMPORT_STEPS[i - 1] : null;
 }

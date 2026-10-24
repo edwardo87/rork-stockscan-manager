@@ -32,6 +32,8 @@ import {
   Minus,
   PackageCheck,
   Plus,
+  RotateCcw,
+  Trash2,
   Truck,
   X,
 } from 'lucide-react-native';
@@ -41,27 +43,45 @@ import { SupabaseService } from '@/services/supabaseService';
 import {
   autoMapColumns,
   base64ToBytes,
+  bucketOf,
   buildDraft,
   buildDrafts,
-  CatalogueDraft,
+  buildImportAccounting,
   CatalogueSource,
   ColumnMapping,
+  columnHints,
+  countReview,
+  deselectAll,
   detectHeaderRow,
   detectSource,
+  DraftOverrides,
+  DraftReference,
+  emptySelection,
+  excludeRows,
   FIELD_LABEL,
+  ImportAccounting,
   parseCatalogueFile,
   ParsedCatalogueFile,
   PdfLimitationError,
+  restoreRows,
+  ReviewBucket,
   ReviewCategory,
   reviewDrafts,
   ReviewedDraft,
+  ReviewSelection,
+  selectAllReady,
+  selectAllRemaining,
+  selectedForImport,
   sheetToTable,
-  summariseReview,
+  sourceRowCount,
+  stepBefore,
   supplierStockColumns,
   TARGET_FIELDS,
   TargetField,
+  toggleSelected,
+  withDefaultSelection,
 } from '@/services/catalogueImportService';
-import { unitPriceLabel } from '@/utils/purchasing';
+import { formatUnitPrice, unitPriceLabel } from '@/utils/purchasing';
 
 type Step = 'supplier' | 'file' | 'columns' | 'review' | 'done';
 const STEPS: { key: Step; label: string }[] = [
@@ -72,7 +92,28 @@ const STEPS: { key: Step; label: string }[] = [
 ];
 const FILE_COLUMN = '__file__';
 
-type Filter = 'all' | ReviewCategory | 'selected';
+type Filter = 'all' | 'selected' | ReviewBucket;
+
+const FILTER_EXPLAIN: Record<Filter, string> = {
+  all: 'Every product found in the file, except rows you removed.',
+  selected: 'These are added when you tap Import.',
+  ready: 'Complete rows that can be imported as they are.',
+  review: 'Can be imported, but something needs a quick check — tap a row to see why. Not ticked automatically.',
+  existing: 'Already in your catalogue, repeated in this file, or clashing with an existing product. Never imported — existing products are never changed.',
+  cannot: 'Not products (freight, charges, totals) or missing a product name. These can’t be imported.',
+  excluded: 'Rows you removed with the bin. Nothing is deleted — restore them any time.',
+};
+
+/** Quote / reference details for a row, in plain words (never saved). */
+function referenceSummary(ref: DraftReference): string {
+  const parts: string[] = [];
+  if (ref.customerCode) parts.push(`Your code ${ref.customerCode}`);
+  if (ref.quotedQuantity !== undefined) parts.push(`Quoted ${ref.quotedQuantity.toLocaleString()}`);
+  if (ref.discountPercent) parts.push(`${ref.discountPercent}% off ${ref.listPrice !== undefined ? formatUnitPrice(ref.listPrice) : 'list'}`);
+  if (ref.lineTotal !== undefined) parts.push(`Line total ${formatUnitPrice(ref.lineTotal)}`);
+  if (ref.supplierStock !== undefined) parts.push(`Supplier has ${ref.supplierStock.toLocaleString()}`);
+  return parts.join('  ·  ');
+}
 
 const tap = () => {
   if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => undefined);
@@ -126,15 +167,22 @@ export default function CatalogueImportScreen() {
   const [headerRow, setHeaderRow] = useState(0);
   const [mapping, setMapping] = useState<ColumnMapping>([]);
   const [pickerColumn, setPickerColumn] = useState<number | null>(null);
-  const [drafts, setDrafts] = useState<CatalogueDraft[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // User edits per row (survive column changes) and the review selection.
+  const [overrides, setOverrides] = useState<DraftOverrides>({});
+  const [selection, setSelection] = useState<ReviewSelection>(emptySelection);
+  const seenKeys = useRef<Set<string>>(new Set());
   const [filter, setFilter] = useState<Filter>('all');
   const [editing, setEditing] = useState<ReviewedDraft | null>(null);
   const [editValues, setEditValues] = useState<Partial<Record<TargetField, string>>>({});
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<CatalogueImportResult | null>(null);
+  const [accounting, setAccounting] = useState<ImportAccounting | null>(null);
+  const [hadQuoteDetails, setHadQuoteDetails] = useState(false);
   const [purchasingColumns, setPurchasingColumns] = useState<boolean | null>(null);
   const allowLeave = useRef(false);
+  /** Set when the user chooses to leave the whole workflow (Close), not step back. */
+  const closing = useRef(false);
+  const firstStep: Step = params.supplierId ? 'file' : 'supplier';
 
   // ---- data loading --------------------------------------------------------
   useEffect(() => {
@@ -164,10 +212,24 @@ export default function CatalogueImportScreen() {
     [supplierRecord],
   );
 
-  // Warn before discarding work in progress.
+  // Back (header arrow, Android back, swipe) moves one stage back and keeps
+  // everything. Only leaving the workflow entirely asks before discarding.
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', (e: { preventDefault: () => void; data: { action: unknown } }) => {
-      if (allowLeave.current || step === 'done' || (!file && step !== 'review')) return;
+      if (allowLeave.current || step === 'done') return;
+      const type = (e.data.action as { type?: string } | undefined)?.type;
+      const isBack = type === 'GO_BACK' || type === 'POP';
+      if (isBack && !closing.current && step !== firstStep) {
+        const prev = stepBefore(step);
+        if (prev) {
+          e.preventDefault();
+          tap();
+          setStep(prev);
+          return;
+        }
+      }
+      closing.current = false;
+      if (!file) return;
       e.preventDefault();
       Alert.alert('Discard this import?', 'Your column choices and edits will be lost. Nothing has been imported yet.', [
         { text: 'Keep editing', style: 'cancel' },
@@ -182,17 +244,27 @@ export default function CatalogueImportScreen() {
       ]);
     });
     return unsub;
-  }, [navigation, step, file]);
+  }, [navigation, step, file, firstStep]);
+
+  const closeWorkflow = () => {
+    closing.current = true;
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/products');
+  };
 
   // ---- table + mapping -----------------------------------------------------
   const sheet = file?.sheets[sheetIndex];
   const table = useMemo(() => (sheet ? sheetToTable(sheet, headerRow) : null), [sheet, headerRow]);
 
+  /** A different table (file, worksheet or heading row): row edits and choices no longer apply. */
   const resetMapping = useCallback(
     (sheetIdx: number, hdr: number, parsed: ParsedCatalogueFile) => {
       const s = parsed.sheets[sheetIdx];
       const t = sheetToTable(s, hdr);
-      setMapping(autoMapColumns(t.headers, t.rows.slice(0, 30).map(r => r.cells)));
+      setMapping(autoMapColumns(t.headers, t.rows.slice(0, 30).map(r => r.cells), parsed.document.kind));
+      setOverrides({});
+      setSelection(emptySelection());
+      seenKeys.current = new Set();
     },
     [],
   );
@@ -269,7 +341,7 @@ export default function CatalogueImportScreen() {
       let bestRows = -1;
       parsed.sheets.forEach((s, i) => {
         const t = sheetToTable(s, detectHeaderRow(s.rows));
-        const m = autoMapColumns(t.headers, t.rows.slice(0, 30).map(r => r.cells));
+        const m = autoMapColumns(t.headers, t.rows.slice(0, 30).map(r => r.cells), parsed.document.kind);
         const score = (m.includes('name') ? 1000 : 0) + m.filter(Boolean).length * 100 + Math.min(t.rows.length, 99);
         if (score > bestRows) { bestRows = score; bestSheet = i; }
       });
@@ -303,78 +375,99 @@ export default function CatalogueImportScreen() {
   };
 
   // ---- drafts + review -----------------------------------------------------
+  const draftCtx = useMemo(
+    () => (file ? { source: file.source, supplier: supplierCtx } : null),
+    [file, supplierCtx],
+  );
+  const hints = useMemo(() => (table ? columnHints(table.headers, mapping) : undefined), [table, mapping]);
+
+  const buildReviewed = useCallback(
+    (ov: DraftOverrides) =>
+      table && draftCtx ? reviewDrafts(products, buildDrafts(table, mapping, { ...draftCtx, hints }, sheet, ov)) : [],
+    [table, draftCtx, products, mapping, hints, sheet],
+  );
+
   const goToReview = () => {
     if (!table || !file) return;
-    const built = buildDrafts(table, mapping, { source: file.source, supplier: supplierCtx }, sheet);
-    const reviewed = reviewDrafts(products, built);
-    setDrafts(built);
-    setSelected(new Set(reviewed.filter(r => r.importable && r.includeByDefault).map(r => r.key)));
+    const rows = buildReviewed(overrides);
+    // Rows seen before keep the user's choices; new rows get the default (Ready ticked).
+    setSelection(prev => withDefaultSelection(rows, prev, seenKeys.current));
+    rows.forEach(r => seenKeys.current.add(r.key));
     setFilter('all');
     setStep('review');
     tap();
   };
 
-  const reviewed = useMemo(() => reviewDrafts(products, drafts), [products, drafts]);
-  const summary = useMemo(() => summariseReview(reviewed), [reviewed]);
-  const selectedRows = useMemo(
-    () => reviewed.filter(r => r.importable && selected.has(r.key)),
-    [reviewed, selected],
+  const reviewed = useMemo(
+    () => (step === 'review' ? buildReviewed(overrides) : []),
+    [step, buildReviewed, overrides],
   );
+  const counts = useMemo(() => countReview(reviewed, selection, sourceRowCount(sheet)), [reviewed, selection, sheet]);
+  const selectedRows = useMemo(() => selectedForImport(reviewed, selection), [reviewed, selection]);
   const visibleRows = useMemo(() => {
     switch (filter) {
-      case 'all': return reviewed;
-      case 'selected': return reviewed.filter(r => r.importable && selected.has(r.key));
-      default: return reviewed.filter(r => r.category === filter);
+      case 'all': return reviewed.filter(r => !selection.excluded.has(r.key));
+      case 'selected': return selectedRows;
+      default: return reviewed.filter(r => bucketOf(r, selection) === filter);
     }
-  }, [reviewed, filter, selected]);
+  }, [reviewed, filter, selection, selectedRows]);
 
   const basisQuestionRows = useMemo(
     () =>
       reviewed.filter(
         r =>
           r.importable &&
+          !selection.excluded.has(r.key) &&
           !r.values.priceBasisQuantity &&
           r.issues.some(i => i.code === 'ambiguous-basis') &&
           (r.product.unitsPerOrderUnit ?? 1) > 1,
       ),
-    [reviewed],
+    [reviewed, selection],
   );
 
   const toggleRow = (row: ReviewedDraft) => {
-    if (!row.importable) return;
+    if (!row.importable || selection.excluded.has(row.key)) return;
     tap();
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(row.key)) next.delete(row.key);
-      else next.add(row.key);
-      return next;
-    });
+    setSelection(prev => toggleSelected(prev, row.key));
+  };
+
+  const excludeRow = (row: ReviewedDraft) => {
+    tap();
+    setSelection(prev => excludeRows(prev, [row.key]));
+  };
+
+  const restoreRow = (row: ReviewedDraft) => {
+    tap();
+    setSelection(prev => restoreRows(prev, [row.key]));
   };
 
   const applyBasisToAll = (perPack: boolean) => {
     tap();
-    const keys = new Set(basisQuestionRows.map(r => r.key));
-    const source = file?.source ?? 'csv';
-    setDrafts(prev =>
-      prev.map(d => {
-        if (!keys.has(d.key)) return d;
-        const qty = perPack ? String(d.product.unitsPerOrderUnit ?? 1) : '1';
-        return buildDraft(d.key, d.rowNumber, { ...d.values, priceBasisQuantity: qty }, { source, supplier: supplierCtx, lowConfidence: d.lowConfidence });
-      }),
-    );
-    setSelected(prev => {
-      const next = new Set(prev);
+    const next = { ...overrides };
+    basisQuestionRows.forEach(r => {
+      next[r.key] = { ...r.values, priceBasisQuantity: perPack ? String(r.product.unitsPerOrderUnit ?? 1) : '1' };
+    });
+    setOverrides(next);
+    setSelection(prev => {
+      const selected = new Set(prev.selected);
       basisQuestionRows.forEach(r => {
         const others = r.issues.filter(i => i.level === 'review' && i.code !== 'ambiguous-basis');
-        if (others.length === 0) next.add(r.key);
+        if (others.length === 0) selected.add(r.key);
       });
-      return next;
+      return { selected, excluded: prev.excluded };
     });
   };
 
-  const selectAllImportable = (includeReview: boolean) => {
+  const bulk = (action: 'ready' | 'remaining' | 'none' | 'restore-all') => {
     tap();
-    setSelected(new Set(reviewed.filter(r => r.importable && (includeReview || r.category === 'ready')).map(r => r.key)));
+    setSelection(prev => {
+      switch (action) {
+        case 'ready': return selectAllReady(reviewed, prev);
+        case 'remaining': return selectAllRemaining(reviewed, prev);
+        case 'none': return deselectAll(prev);
+        default: return restoreRows(prev, [...prev.excluded]);
+      }
+    });
   };
 
   const openEdit = (row: ReviewedDraft) => {
@@ -385,27 +478,38 @@ export default function CatalogueImportScreen() {
 
   const saveEdit = () => {
     if (!editing || !file) return;
-    const rebuilt = buildDraft(editing.key, editing.rowNumber, editValues, {
-      source: file.source,
-      supplier: supplierCtx,
-      lowConfidence: false, // the user has checked the values
-    });
-    setDrafts(prev => prev.map(d => (d.key === editing.key ? rebuilt : d)));
-    const afterReview = reviewDrafts(products, drafts.map(d => (d.key === editing.key ? rebuilt : d))).find(r => r.key === editing.key);
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (afterReview?.importable && rebuilt.status !== 'invalid') next.add(editing.key);
-      else next.delete(editing.key);
-      return next;
+    const key = editing.key;
+    const nextOverrides = { ...overrides, [key]: editValues };
+    setOverrides(nextOverrides);
+    const after = buildReviewed(nextOverrides).find(r => r.key === key);
+    setSelection(prev => {
+      const selected = new Set(prev.selected);
+      if (after?.importable && after.status !== 'invalid' && !prev.excluded.has(key)) selected.add(key);
+      else selected.delete(key);
+      return { selected, excluded: prev.excluded };
     });
     setEditing(null);
   };
 
   const runImport = async () => {
     if (selectedRows.length === 0) return;
+    // Snapshot the review state BEFORE saving: afterwards the new products
+    // match themselves and would be miscounted as "already in catalogue".
+    const rowsBefore = reviewed;
+    const selBefore = selection;
+    const sourceRows = sourceRowCount(sheet);
+    const toSave = selectedRows;
     setImporting(true);
     try {
-      const res = await importCatalogueProducts(selectedRows.map(r => r.product));
+      const res = await importCatalogueProducts(toSave.map(r => r.product));
+      setAccounting(
+        buildImportAccounting(rowsBefore, selBefore, sourceRows, {
+          imported: res.imported.length,
+          skippedAsExisting: res.skippedAsExisting,
+          failed: res.failed,
+        }),
+      );
+      setHadQuoteDetails(toSave.some(r => referenceSummary(r.reference) !== ''));
       setResult(res);
       allowLeave.current = true;
       setStep('done');
@@ -423,11 +527,18 @@ export default function CatalogueImportScreen() {
 
   const confirmImport = () => {
     const n = selectedRows.length;
-    const skipped = summary.total - n;
+    const notTicked = counts.ready + counts.review - n;
+    const left = [
+      counts.existing > 0 ? `${counts.existing} already in your catalogue or repeated` : '',
+      counts.excluded > 0 ? `${counts.excluded} removed by you` : '',
+      counts.cannotImport > 0 ? `${counts.cannotImport} that can’t be imported` : '',
+      notTicked > 0 ? `${notTicked} not ticked` : '',
+    ].filter(Boolean);
     Alert.alert(
       `Import ${n} product${n === 1 ? '' : 's'}?`,
-      `${n} new product${n === 1 ? '' : 's'} will be added${supplierRecord ? ` for ${supplierRecord.name}` : ''}. ` +
-        `${skipped} row${skipped === 1 ? '' : 's'} will be left out. Existing products are never changed.`,
+      `${n} new product${n === 1 ? '' : 's'} will be added${supplierRecord ? ` for ${supplierRecord.name}` : ''}.` +
+        (left.length ? ` Not imported: ${left.join(', ')}.` : '') +
+        ' Existing products and stock levels are never changed.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Import', onPress: runImport },
@@ -437,9 +548,11 @@ export default function CatalogueImportScreen() {
 
   const restart = () => {
     setFile(null);
-    setDrafts([]);
-    setSelected(new Set());
+    setOverrides({});
+    setSelection(emptySelection());
+    seenKeys.current = new Set();
     setResult(null);
+    setAccounting(null);
     setFileError(null);
     allowLeave.current = false;
     setStep('file');
@@ -637,7 +750,7 @@ export default function CatalogueImportScreen() {
               <View style={[styles.dropIcon, { backgroundColor: colors.primary }]}>
                 <FileUp size={28} color="#FFFFFF" />
               </View>
-              <Text style={[styles.dropTitle, { color: colors.text }]}>Choose a file</Text>
+              <Text style={[styles.dropTitle, { color: colors.text }]}>{file ? 'Choose a different file' : 'Choose a file'}</Text>
               <View style={styles.formatRow}>
                 {['CSV', 'Excel', 'PDF'].map(f => (
                   <View key={f} style={[styles.formatChip, { backgroundColor: surface, borderColor: colors.border }]}>
@@ -650,6 +763,19 @@ export default function CatalogueImportScreen() {
         </Pressable>
 
         {fileError && <Banner tone="error" title={fileError.title}>{fileError.message}</Banner>}
+
+        {file && !reading && (
+          <View style={[styles.fileChip, { backgroundColor: surface, borderColor: tint(colors.primary, 0.45) }]}>
+            {file.source === 'pdf' ? <FileText size={18} color={colors.primary} /> : <FileSpreadsheet size={18} color={colors.primary} />}
+            <View style={styles.flex1}>
+              <Text style={[styles.fileChipName, { color: colors.text }]} numberOfLines={1}>{file.fileName}</Text>
+              <Text style={[styles.fileChipMeta, { color: colors.inactive }]} numberOfLines={1}>
+                {file.document.label} · your column choices and edits are kept
+              </Text>
+            </View>
+            <Check size={18} color={colors.success} />
+          </View>
+        )}
 
         <View style={[styles.tipCard, { backgroundColor: surface, borderColor: colors.border }]}>
           <View style={styles.tipRow}>
@@ -666,8 +792,14 @@ export default function CatalogueImportScreen() {
           </View>
         </View>
       </ScrollView>
-      {!params.supplierId && (
-        <BottomBar label="Back" onPress={() => setStep('supplier')} />
+      {file ? (
+        <BottomBar
+          label="Continue"
+          onPress={() => { tap(); setStep('columns'); }}
+          secondary={params.supplierId ? undefined : { label: 'Back', onPress: () => { tap(); setStep('supplier'); } }}
+        />
+      ) : (
+        !params.supplierId && <BottomBar label="Back" onPress={() => { tap(); setStep('supplier'); }} />
       )}
     </>
   );
@@ -683,7 +815,7 @@ export default function CatalogueImportScreen() {
             {file.source === 'pdf' ? <FileText size={18} color={colors.primary} /> : <FileSpreadsheet size={18} color={colors.primary} />}
             <Text style={[styles.fileChipName, { color: colors.text }]} numberOfLines={1}>{file.fileName}</Text>
             <Text style={[styles.fileChipMeta, { color: colors.inactive }]}>{table.rows.length} rows</Text>
-            <Pressable onPress={restart} hitSlop={8}>
+            <Pressable onPress={() => { tap(); setStep('file'); }} hitSlop={8}>
               <Text style={[styles.linkText, { color: colors.primary }]}>Change</Text>
             </Pressable>
           </View>
@@ -705,6 +837,7 @@ export default function CatalogueImportScreen() {
             </>
           )}
 
+          <Banner tone="info" title={file.document.label}>{file.document.explanation}</Banner>
           {file.notes.map(n => <Banner key={n} tone="info">{n}</Banner>)}
 
           <Text style={[styles.sectionLabel, { color: colors.inactive }]}>COLUMN HEADINGS</Text>
@@ -763,40 +896,58 @@ export default function CatalogueImportScreen() {
             );
           })}
         </ScrollView>
-        <BottomBar label="Review products" disabled={!nameMapped} onPress={goToReview} secondary={{ label: 'Back', onPress: restart }} />
+        <BottomBar label="Review products" disabled={!nameMapped} onPress={goToReview} secondary={{ label: 'Back', onPress: () => { tap(); setStep('file'); } }} />
       </>
     );
   };
 
   // ---- step: review --------------------------------------------------------
   const filters: { key: Filter; label: string; count: number; color: string }[] = [
-    { key: 'all', label: 'All', count: summary.total, color: colors.text },
-    { key: 'selected', label: 'Selected', count: selectedRows.length, color: colors.primary },
-    { key: 'ready', label: 'Ready', count: summary.ready, color: colors.success },
-    { key: 'review', label: 'Needs review', count: summary.review, color: colors.warning },
-    { key: 'existing', label: 'Existing', count: summary.existing + summary.duplicatesInFile, color: colors.inactive },
-    { key: 'conflict', label: 'Conflicts', count: summary.conflicts, color: colors.error },
-    { key: 'invalid', label: 'Invalid', count: summary.invalid, color: colors.error },
+    { key: 'all', label: 'All', count: counts.productRows - counts.excluded, color: colors.text },
+    { key: 'selected', label: 'Selected', count: counts.selected, color: colors.primary },
+    { key: 'ready', label: 'Ready', count: counts.ready, color: colors.success },
+    { key: 'review', label: 'Needs review', count: counts.review, color: colors.warning },
+    { key: 'existing', label: 'Existing / duplicate', count: counts.existing, color: colors.inactive },
+    { key: 'cannot', label: 'Cannot import', count: counts.cannotImport, color: colors.error },
+    { key: 'excluded', label: 'Removed', count: counts.excluded, color: colors.inactive },
   ];
 
   const renderRow = ({ item }: { item: ReviewedDraft }) => {
-    const isSel = item.importable && selected.has(item.key);
+    const excluded = selection.excluded.has(item.key);
+    const canSelect = item.importable && !excluded;
+    const isSel = canSelect && selection.selected.has(item.key);
     const p = item.product;
     const mainIssue =
       item.category === 'existing' || item.category === 'conflict'
         ? item.match.reason
         : item.issues.find(i => i.level === 'error') ?? item.issues.find(i => i.level === 'review') ?? item.issues.find(i => i.level === 'info');
     const issueText = typeof mainIssue === 'string' ? mainIssue : mainIssue?.message;
-    const price = p.purchasePrice !== undefined ? unitPriceLabel(p) : null;
+    const price = p.purchasePrice !== undefined ? unitPriceLabel(p) : 'No price';
     const meta = [p.supplierCode, p.orderUnit, price].filter(Boolean).join('  ·  ');
-    const c = statusColor[item.category];
+    const ref = referenceSummary(item.reference);
+    const c = excluded ? colors.inactive : statusColor[item.category];
+    const label = excluded ? 'Removed by you' : statusLabel[item.category];
     return (
       <Pressable
         onPress={() => openEdit(item)}
-        style={({ pressed }) => [styles.rowCard, { backgroundColor: surface, borderColor: isSel ? tint(colors.primary, 0.45) : colors.border, opacity: pressed ? 0.88 : item.importable ? 1 : 0.72 }]}
+        style={({ pressed }) => [
+          styles.rowCard,
+          {
+            backgroundColor: surface,
+            borderColor: isSel ? tint(colors.primary, 0.45) : colors.border,
+            opacity: pressed ? 0.88 : canSelect ? 1 : 0.72,
+          },
+        ]}
       >
-        <Pressable onPress={() => toggleRow(item)} hitSlop={10} disabled={!item.importable} style={styles.checkWrap}>
-          {item.importable ? (
+        <Pressable
+          onPress={() => toggleRow(item)}
+          hitSlop={10}
+          disabled={!canSelect}
+          style={styles.checkWrap}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: isSel, disabled: !canSelect }}
+        >
+          {canSelect ? (
             <View style={[styles.checkbox, { borderColor: isSel ? colors.primary : colors.border, backgroundColor: isSel ? colors.primary : 'transparent' }]}>
               {isSel && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
             </View>
@@ -809,92 +960,125 @@ export default function CatalogueImportScreen() {
             {p.name || `Row ${item.rowNumber} — no name`}
           </Text>
           {!!meta && <Text style={[styles.rowMeta, { color: colors.inactive }]} numberOfLines={1}>{meta}</Text>}
+          {!!ref && <Text style={[styles.rowRef, { color: colors.inactive }]} numberOfLines={1}>{ref}</Text>}
           <View style={styles.rowFooter}>
             <View style={[styles.statusBadge, { backgroundColor: tint(c, 0.14) }]}>
               <View style={[styles.statusDot, { backgroundColor: c }]} />
-              <Text style={[styles.statusText, { color: c }]}>{statusLabel[item.category]}</Text>
+              <Text style={[styles.statusText, { color: c }]}>{label}</Text>
             </View>
+            {item.edited && <Text style={[styles.rowNum, { color: colors.primary }]}>Edited</Text>}
             <Text style={[styles.rowNum, { color: colors.inactive }]}>Row {item.rowNumber}</Text>
           </View>
-          {!!issueText && (
+          {!!issueText && !excluded && (
             <Text style={[styles.rowIssue, { color: colors.text }]} numberOfLines={2}>{issueText}</Text>
           )}
         </View>
+        <Pressable
+          onPress={() => (excluded ? restoreRow(item) : excludeRow(item))}
+          hitSlop={10}
+          style={({ pressed }) => [styles.binBtn, { backgroundColor: pressed ? tint(excluded ? colors.primary : colors.error, 0.12) : 'transparent' }]}
+          accessibilityLabel={excluded ? 'Restore row' : 'Remove row from this import'}
+        >
+          {excluded ? <RotateCcw size={18} color={colors.primary} /> : <Trash2 size={18} color={colors.inactive} />}
+        </Pressable>
       </Pressable>
     );
   };
 
-  const renderReviewHeader = () => (
-    <View>
-      <View style={[styles.summaryHero, { backgroundColor: colors.primary }]}>
-        <Text style={styles.summaryBig}>{selectedRows.length}</Text>
-        <View style={styles.flex1}>
-          <Text style={styles.summaryTitle}>new product{selectedRows.length === 1 ? '' : 's'} selected</Text>
-          <Text style={styles.summarySub}>
-            {summary.total} rows read{supplierRecord ? ` · ${supplierRecord.name}` : ''}
-          </Text>
-        </View>
-        <PackageCheck size={30} color="rgba(255,255,255,0.85)" />
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-        {filters.filter(f => f.key === 'all' || f.count > 0).map(f => {
-          const active = filter === f.key;
-          return (
-            <Pressable
-              key={f.key}
-              onPress={() => { tap(); setFilter(f.key); }}
-              style={[styles.filterChip, { backgroundColor: active ? colors.text : surface, borderColor: active ? colors.text : colors.border }]}
-            >
-              <Text style={[styles.chipText, { color: active ? (dark ? '#000' : '#FFF') : colors.text }]}>{f.label}</Text>
-              <View style={[styles.countBubble, { backgroundColor: active ? (dark ? '#0003' : '#FFF3') : tint(f.color, 0.15) }]}>
-                <Text style={[styles.countText, { color: active ? (dark ? '#000' : '#FFF') : f.color }]}>{f.count}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      {purchasingColumns === false && (
-        <Banner tone="info" title="Purchasing details saved on this device for now">
-          Supplier codes, order units, pack quantities and price bases are kept on this phone until your database upgrade (Chapter 3) is installed, then saved to your account automatically. Names, suppliers and costs save to your account now.
-        </Banner>
-      )}
-
-      {basisQuestionRows.length > 0 && (
-        <View style={[styles.questionCard, { backgroundColor: surface, borderColor: tint(colors.warning, 0.5) }]}>
-          <Text style={[styles.choiceTitle, { color: colors.text }]}>
-            Is the price per item or per pack?
-          </Text>
-          <Text style={[styles.choiceSub, { color: colors.inactive, marginBottom: 12 }]}>
-            {basisQuestionRows.length} row{basisQuestionRows.length === 1 ? '' : 's'} list a pack size but don’t say what the price covers. Choose for all of them, or tap a row to set it individually.
-          </Text>
-          <View style={styles.twoBtns}>
-            <Pressable onPress={() => applyBasisToAll(false)} style={({ pressed }) => [styles.outlineBtn, { borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
-              <Text style={[styles.outlineBtnText, { color: colors.primary }]}>Per item</Text>
-            </Pressable>
-            <Pressable onPress={() => applyBasisToAll(true)} style={({ pressed }) => [styles.outlineBtn, { borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
-              <Text style={[styles.outlineBtnText, { color: colors.primary }]}>Per pack</Text>
-            </Pressable>
+  const renderReviewHeader = () => {
+    const nonProductLines = counts.sourceRows - counts.productRows;
+    const remaining = counts.ready + counts.review;
+    return (
+      <View>
+        <View style={[styles.summaryHero, { backgroundColor: colors.primary }]}>
+          <Text style={styles.summaryBig}>{counts.selected}</Text>
+          <View style={styles.flex1}>
+            <Text style={styles.summaryTitle}>new product{counts.selected === 1 ? '' : 's'} selected</Text>
+            <Text style={styles.summarySub}>
+              {counts.productRows} products found in {counts.sourceRows} lines{supplierRecord ? ` · ${supplierRecord.name}` : ''}
+            </Text>
           </View>
+          <PackageCheck size={30} color="rgba(255,255,255,0.85)" />
         </View>
-      )}
 
-      <View style={styles.bulkRow}>
-        <Pressable onPress={() => selectAllImportable(false)} hitSlop={6}>
-          <Text style={[styles.linkText, { color: colors.primary }]}>Select ready</Text>
-        </Pressable>
-        {summary.review > 0 && (
-          <Pressable onPress={() => selectAllImportable(true)} hitSlop={6}>
-            <Text style={[styles.linkText, { color: colors.primary }]}>Include rows needing review</Text>
-          </Pressable>
+        {file && (
+          <Text style={[styles.docLine, { color: colors.inactive }]}>
+            <Text style={[styles.bold, { color: colors.text }]}>{file.document.label}. </Text>
+            {nonProductLines > 0 ? `${nonProductLines} line${nonProductLines === 1 ? ' was a heading, page header, note or total' : 's were headings, page headers, notes or totals'} and are not products. ` : ''}
+            {file.document.explanation}
+          </Text>
         )}
-        <Pressable onPress={() => { tap(); setSelected(new Set()); }} hitSlop={6}>
-          <Text style={[styles.linkText, { color: colors.inactive }]}>Clear</Text>
-        </Pressable>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+          {filters.filter(f => f.key === 'all' || f.key === filter || f.count > 0).map(f => {
+            const active = filter === f.key;
+            return (
+              <Pressable
+                key={f.key}
+                onPress={() => { tap(); setFilter(f.key); }}
+                style={[styles.filterChip, { backgroundColor: active ? colors.text : surface, borderColor: active ? colors.text : colors.border }]}
+              >
+                <Text style={[styles.chipText, { color: active ? (dark ? '#000' : '#FFF') : colors.text }]}>{f.label}</Text>
+                <View style={[styles.countBubble, { backgroundColor: active ? (dark ? '#0003' : '#FFF3') : tint(f.color, 0.15) }]}>
+                  <Text style={[styles.countText, { color: active ? (dark ? '#000' : '#FFF') : f.color }]}>{f.count}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        <Text style={[styles.filterExplain, { color: colors.inactive }]}>{FILTER_EXPLAIN[filter]}</Text>
+
+        {purchasingColumns === false && (
+          <Banner tone="info" title="Purchasing details saved on this device for now">
+            Supplier codes, order units, pack quantities and price bases are kept on this phone until your database upgrade (Chapter 3) is installed, then saved to your account automatically. Names, categories, suppliers and costs save to your account now.
+          </Banner>
+        )}
+
+        {basisQuestionRows.length > 0 && (
+          <View style={[styles.questionCard, { backgroundColor: surface, borderColor: tint(colors.warning, 0.5) }]}>
+            <Text style={[styles.choiceTitle, { color: colors.text }]}>
+              Is the price per item or per pack?
+            </Text>
+            <Text style={[styles.choiceSub, { color: colors.inactive, marginBottom: 12 }]}>
+              {basisQuestionRows.length} row{basisQuestionRows.length === 1 ? '' : 's'} list a pack size but don’t say what the price covers. Choose for all of them, or tap a row to set it individually.
+            </Text>
+            <View style={styles.twoBtns}>
+              <Pressable onPress={() => applyBasisToAll(false)} style={({ pressed }) => [styles.outlineBtn, { borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
+                <Text style={[styles.outlineBtnText, { color: colors.primary }]}>Per item</Text>
+              </Pressable>
+              <Pressable onPress={() => applyBasisToAll(true)} style={({ pressed }) => [styles.outlineBtn, { borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
+                <Text style={[styles.outlineBtnText, { color: colors.primary }]}>Per pack</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.bulkRow}>
+          {filter === 'excluded' ? (
+            counts.excluded > 0 && (
+              <Pressable onPress={() => bulk('restore-all')} hitSlop={6}>
+                <Text style={[styles.linkText, { color: colors.primary }]}>Restore all</Text>
+              </Pressable>
+            )
+          ) : (
+            <>
+              <Pressable onPress={() => bulk('ready')} hitSlop={6} disabled={counts.ready === 0}>
+                <Text style={[styles.linkText, { color: counts.ready === 0 ? colors.inactive : colors.primary }]}>Select all ready</Text>
+              </Pressable>
+              {counts.review > 0 && (
+                <Pressable onPress={() => bulk('remaining')} hitSlop={6}>
+                  <Text style={[styles.linkText, { color: colors.primary }]}>Select all remaining ({remaining})</Text>
+                </Pressable>
+              )}
+              <Pressable onPress={() => bulk('none')} hitSlop={6} disabled={counts.selected === 0}>
+                <Text style={[styles.linkText, { color: colors.inactive }]}>Deselect all</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderReviewStep = () => (
     <>
@@ -912,16 +1096,27 @@ export default function CatalogueImportScreen() {
         label={importing ? 'Importing…' : selectedRows.length === 0 ? 'Select products to import' : `Import ${selectedRows.length} product${selectedRows.length === 1 ? '' : 's'}`}
         disabled={importing || selectedRows.length === 0}
         onPress={confirmImport}
-        secondary={{ label: 'Columns', onPress: () => setStep('columns') }}
+        secondary={{ label: 'Back', onPress: () => { tap(); setStep('columns'); } }}
       />
     </>
   );
 
   // ---- step: done ----------------------------------------------------------
   const renderDoneStep = () => {
-    if (!result) return null;
-    const n = result.imported.length;
-    const ok = !result.error;
+    if (!result || !accounting) return null;
+    const a = accounting;
+    const n = a.imported;
+    const ok = !result.error && a.saveFailed === 0 && a.notAttempted === 0;
+    const lines: { label: string; value: number; color: string; always?: boolean }[] = [
+      { label: 'Added to your catalogue', value: n, color: colors.success, always: true },
+      { label: 'Already in catalogue when saving — skipped', value: a.existingAtSave, color: colors.inactive },
+      { label: 'Not saved — error', value: a.saveFailed, color: colors.error },
+      { label: 'Not saved — import stopped early', value: a.notAttempted, color: colors.error },
+      { label: 'Already in catalogue or repeated — skipped', value: a.existingSkipped, color: colors.inactive },
+      { label: 'Removed by you', value: a.userExcluded, color: colors.inactive },
+      { label: 'Cannot import (charges, totals, no name)', value: a.cannotImport, color: colors.warning },
+      { label: 'Not ticked', value: a.notSelected, color: colors.inactive },
+    ];
     return (
       <>
         <ScrollView contentContainerStyle={[styles.scrollPad, styles.doneWrap]}>
@@ -932,16 +1127,18 @@ export default function CatalogueImportScreen() {
             {n > 0 ? `${n} product${n === 1 ? '' : 's'} added` : 'No products added'}
           </Text>
           <Text style={[styles.lead, styles.center, { color: colors.inactive }]}>
-            {supplierRecord ? `Linked to ${supplierRecord.name}. ` : ''}Existing products were not changed.
+            {supplierRecord && n > 0 ? `Linked to ${supplierRecord.name}. ` : ''}Existing products and stock levels were not changed.
           </Text>
 
           <View style={[styles.resultCard, { backgroundColor: surface, borderColor: colors.border }]}>
-            <ResultLine label="Added to your catalogue" value={n} color={colors.success} textColor={colors.text} />
-            <ResultLine label="Left out at review" value={summary.total - selectedRows.length} color={colors.inactive} textColor={colors.text} />
-            {result.skippedAsExisting > 0 && (
-              <ResultLine label="Skipped — now already in catalogue" value={result.skippedAsExisting} color={colors.inactive} textColor={colors.text} />
-            )}
-            {result.failed > 0 && <ResultLine label="Not saved" value={result.failed} color={colors.error} textColor={colors.text} />}
+            {lines.filter(l => l.always || l.value > 0).map(l => (
+              <ResultLine key={l.label} label={l.label} value={l.value} color={l.color} textColor={colors.text} />
+            ))}
+            <View style={[styles.resultTotal, { borderTopColor: colors.border }]}>
+              <Text style={[styles.resultTotalText, { color: colors.inactive }]}>
+                {a.productRows} product{a.productRows === 1 ? '' : 's'} found in {a.sourceRows} line{a.sourceRows === 1 ? '' : 's'} · each counted once
+              </Text>
+            </View>
           </View>
 
           {result.error && (
@@ -949,9 +1146,19 @@ export default function CatalogueImportScreen() {
               {`${result.error}\n\nRun the import again with the same file — products already added will show as “Already in catalogue”, so nothing is duplicated.`}
             </Banner>
           )}
+          {n > 0 && purchasingColumns !== false && (
+            <Banner tone="info" title="Saved to your account">
+              Names, categories, supplier links, supplier codes, order units, pack quantities and prices.
+            </Banner>
+          )}
           {result.purchasingHeldOnDevice > 0 && (
             <Banner tone="info" title="Purchasing details held on this device">
-              {`${result.purchasingHeldOnDevice} product${result.purchasingHeldOnDevice === 1 ? '' : 's'} have supplier codes, pack sizes or price bases waiting for the database upgrade. They are used for ordering on this phone now and saved to your account automatically once the upgrade is installed.`}
+              {`Names, categories, suppliers and costs were saved to your account. ${result.purchasingHeldOnDevice} product${result.purchasingHeldOnDevice === 1 ? ' has' : 's have'} supplier codes, pack sizes or price bases waiting for the database upgrade — used for ordering on this phone now and saved to your account automatically once the upgrade is installed.`}
+            </Banner>
+          )}
+          {hadQuoteDetails && n > 0 && (
+            <Banner tone="info">
+              Quote details (quoted quantities, line totals, discounts and supplier stock) were used only to check prices and are not saved.
             </Banner>
           )}
         </ScrollView>
@@ -1018,8 +1225,9 @@ export default function CatalogueImportScreen() {
   const renderEditModal = () => {
     if (!editing) return null;
     const preview = file
-      ? buildDraft(editing.key, editing.rowNumber, editValues, { source: file.source, supplier: supplierCtx, lowConfidence: false })
+      ? buildDraft(editing.key, editing.rowNumber, editValues, { source: file.source, supplier: supplierCtx, hints, lowConfidence: false })
       : null;
+    const ref = referenceSummary((preview ?? editing).reference);
     const matchNote = editing.category === 'existing' || editing.category === 'conflict' ? editing.match.reason : null;
     return (
       <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setEditing(null)} transparent={Platform.OS === 'web'}>
@@ -1035,6 +1243,9 @@ export default function CatalogueImportScreen() {
           </View>
           <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }} keyboardShouldPersistTaps="handled">
             {matchNote && <Banner tone={editing.category === 'conflict' ? 'error' : 'info'}>{matchNote}</Banner>}
+            {!!ref && (
+              <Banner tone="info" title="From the document (not saved)">{ref}</Banner>
+            )}
             {preview?.issues.filter(i => i.level !== 'info' || i.code === 'missing-price').map(i => (
               <Banner key={i.code + i.message} tone={i.level === 'error' ? 'error' : i.level === 'review' ? 'warn' : 'info'}>{i.message}</Banner>
             ))}
@@ -1066,7 +1277,21 @@ export default function CatalogueImportScreen() {
 
   return (
     <View style={[styles.flex1, { backgroundColor: canvas }]}>
-      <Stack.Screen options={{ title: step === 'done' ? 'Import Complete' : 'Import Catalogue' }} />
+      <Stack.Screen
+        options={{
+          title: step === 'done' ? 'Import Complete' : 'Import Catalogue',
+          // Swiping would leave the workflow; Back steps through the stages instead.
+          gestureEnabled: step === 'done' || (step === firstStep && !file),
+          headerRight:
+            step === 'done'
+              ? undefined
+              : () => (
+                  <Pressable onPress={closeWorkflow} hitSlop={10} accessibilityLabel="Close import">
+                    <X size={22} color={colors.text} />
+                  </Pressable>
+                ),
+        }}
+      />
       {renderStepper()}
       {step === 'supplier' && renderSupplierStep()}
       {step === 'file' && renderFileStep()}
@@ -1190,6 +1415,12 @@ const styles = StyleSheet.create({
   checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   rowName: { fontSize: 15.5, fontWeight: '600', lineHeight: 20 },
   rowMeta: { fontSize: 13, marginTop: 3 },
+  rowRef: { fontSize: 12, marginTop: 2, fontStyle: 'italic' },
+  binBtn: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginRight: -4, marginTop: -4 },
+  docLine: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  filterExplain: { fontSize: 12.5, lineHeight: 17, marginBottom: 10, marginTop: -4 },
+  resultTotal: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 10 },
+  resultTotalText: { fontSize: 13 },
   rowFooter: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   statusDot: { width: 7, height: 7, borderRadius: 4 },

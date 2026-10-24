@@ -39,9 +39,28 @@ import {
   TargetField,
   ColumnMapping,
   PdfLimitationError,
+  basisFromHeader,
+  buildImportAccounting,
+  countReview,
+  deselectAll,
+  detectDocumentKind,
+  draftKey,
+  emptySelection,
+  excludeRows,
+  ImportAccounting,
+  reconcileLine,
+  restoreRows,
+  rowValues,
+  selectAllReady,
+  selectAllRemaining,
+  selectedForImport,
+  sourceRowCount,
+  stepBefore,
+  toggleSelected,
+  withDefaultSelection,
 } from '@/services/catalogueImportService';
 import { generateCSVTemplate, matchProductsForImport } from '@/services/csvImportService';
-import { lineTotalExGst } from '@/utils/purchasing';
+import { effectivePriceBasisQuantity, lineTotalExGst, unitPriceLabel } from '@/utils/purchasing';
 
 let failures = 0;
 let passes = 0;
@@ -115,8 +134,9 @@ async function run() {
     'Pack Size': 'orderUnit',
     'Nett Price (ex GST)': 'purchasePrice',
     'Price Per': 'priceBasisQuantity',
+    SOH: 'supplierStock',
   });
-  check('supplier stock column (SOH) never auto-mapped, but flagged', supplierStockColumns(table.headers, mapping), ['SOH']);
+  check('supplier stock column (SOH) mapped to supplier stock (reference only), flagged', supplierStockColumns(table.headers, mapping), ['SOH']);
   check('blank rows skipped, row numbers preserved', table.rows.map(r => r.rowNumber), [4, 5, 6, 7, 8, 10, 11]);
 
   const drafts = buildDrafts(table, mapping, { source: 'csv', supplier: FS }, sheet);
@@ -134,7 +154,8 @@ async function run() {
   check('zero price → review, price left blank', [zero.status, zero.product.purchasePrice, issueCodes(zero).includes('zero-price')], ['review', undefined, true]);
   check('"M" basis → review, basis not guessed', [mBasis.status, mBasis.product.priceBasisQuantity, issueCodes(mBasis).includes('ambiguous-basis')], ['review', undefined, true]);
   check('price + pack with no basis → ambiguous, flagged', [noBasis.status, issueCodes(noBasis).includes('ambiguous-basis')], ['review', true]);
-  check('freight line flagged and excluded by default', [freight.status, issueCodes(freight).includes('freight'), freight.includeByDefault], ['review', true, false]);
+  check('freight charge cannot be imported and is never selected', [freight.status, issueCodes(freight).includes('freight'), freight.includeByDefault], ['invalid', true, false]);
+  check('supplier SOH kept as reference, own stock stays 0', [screw.reference.supplierStock, screw.product.currentStock], [12000, 0]);
   check('missing name → invalid', [noName.status, noName.includeByDefault], ['invalid', false]);
   check('only clean rows selected by default', drafts.filter(d => d.includeByDefault).map(d => d.rowNumber), [4, 11]);
 
@@ -142,7 +163,7 @@ async function run() {
   check('in-file repeat detected as duplicate', reviewed[6].category, 'existing');
   check('in-file repeat not importable', reviewed[6].importable, false);
   const sum = summariseReview(reviewed);
-  check('review summary', [sum.ready, sum.duplicatesInFile, sum.review, sum.invalid], [1, 1, 4, 1]);
+  check('review summary', [sum.ready, sum.duplicatesInFile, sum.review, sum.invalid], [1, 1, 3, 2]);
 
   // Editing a row re-validates it.
   const fixed = buildDraft(mBasis.key, mBasis.rowNumber, { ...mBasis.values, priceBasisQuantity: '1000' }, { source: 'csv', supplier: FS });
@@ -190,12 +211,12 @@ async function run() {
   const xt = sheetToTable(xs, xh);
   const xm = autoMapColumns(xt.headers, xt.rows.map(r => r.cells));
   check('xlsx mapping', mapOf(xt.headers, xm), {
-    Code: 'supplierCode', Product: 'name', Barcode: 'barcode', 'Carton Qty': 'unitsPerOrderUnit', 'Unit Price': 'purchasePrice', Category: 'category',
+    Code: 'supplierCode', Product: 'name', Barcode: 'barcode', 'Carton Qty': 'unitsPerOrderUnit', 'Unit Price': 'purchasePrice', Category: 'category', Available: 'supplierStock',
   });
   check('"Available" flagged as supplier stock', supplierStockColumns(xt.headers, xm), ['Available']);
   const xd = buildDrafts(xt, xm, { source: 'xlsx', supplier: { name: 'Seal Supply Co' } }, xs);
   check('numeric cells read as text values', xd[0].product.purchasePrice, 4.2);
-  check('order unit derived from carton qty (flagged as info)', [xd[0].product.orderUnit, issueCodes(xd[0]).includes('derived-order-unit')], ['pack of 12', true]);
+  check('order unit derived from carton qty (flagged as info)', [xd[0].product.orderUnit, issueCodes(xd[0]).includes('derived-order-unit')], ['carton of 12', true]);
   check('per-item vs per-carton price asks for confirmation', xd[0].status, 'review');
   check('pack of 1 needs no basis confirmation', xd[2].status, 'ready');
   const xd0Confirmed = buildDraft(xd[0].key, xd[0].rowNumber, { ...xd[0].values, priceBasisQuantity: '1' }, { source: 'xlsx', supplier: { name: 'Seal Supply Co' } });
@@ -221,15 +242,15 @@ async function run() {
   check('header + 7 product rows (titles, totals, footers, repeated header removed)', ps.rows.length, 8);
   const pt = sheetToTable(ps, detectHeaderRow(ps.rows));
   const pm = autoMapColumns(pt.headers, pt.rows.map(r => r.cells));
-  check('pdf mapping', mapOf(pt.headers, pm), { 'Item Code': 'supplierCode', Description: 'name', Pack: 'orderUnit', Price: 'purchasePrice', Per: 'priceBasisQuantity' });
+  check('pdf mapping', mapOf(pt.headers, pm), { 'Item Code': 'supplierCode', Description: 'name', Pack: 'orderUnit', Price: 'purchasePrice', Per: 'priceBasisQuantity', Available: 'supplierStock' });
   check('pdf "Available" flagged as supplier stock', supplierStockColumns(pt.headers, pm), ['Available']);
   const pd = buildDrafts(pt, pm, { source: 'pdf', supplier: FS }, ps);
   check('right-aligned prices land in the price column', pd.map(d => d.product.purchasePrice), [12.5, 18.9, undefined, 45, 4.2, 25, 6.8]);
   check('pdf rows carry a verify note', issueCodes(pd[0]).includes('pdf-source'), true);
-  check('pdf statuses (zero price, M basis, freight flagged)', pd.map(d => d.status), ['ready', 'ready', 'review', 'review', 'ready', 'review', 'ready']);
+  check('pdf statuses (zero price, M basis flagged; freight cannot import)', pd.map(d => d.status), ['ready', 'ready', 'review', 'review', 'ready', 'invalid', 'ready']);
   check('pdf freight excluded by default', pd[5].includeByDefault, false);
   check('timber priced per lineal metre', [pd[6].product.priceBasisQuantity, pd[6].product.priceBasisUnit], [1, 'metre']);
-  check('notes explain what was left out', pdf.notes.some(n => /not product rows/.test(n)), true);
+  check('notes explain what was left out', pdf.notes.some(n => /non-product lines left out/.test(n)), true);
 
   section('PDF price list — embedded TrueType font (ToUnicode)');
   const pdf2 = await parseCatalogueFile(fixture('price-list-embedded.pdf'), 'pk.pdf', 'pdf');
@@ -259,12 +280,241 @@ async function run() {
   const hmf = await parseCatalogueFile(hm, 'h.pdf', 'pdf');
   check('kerned runs reassembled into cells', hmf.sheets[0].rows, [['Code', 'Name', 'Price'], ['A-1', 'Hinge Brass', '3.10'], ['A-2', 'Hinge Steel', '2.95']]);
 
+  await realSupplierDocuments();
+  pricingRules();
+  mappingRules();
+  selectionAndAccounting();
+
   console.log(`\n${passes} passed, ${failures} failed`);
   if (failures > 0) {
     console.error('Catalogue import checks FAILED.');
     process.exit(1);
   }
   console.log('All catalogue import checks passed.');
+}
+
+// ===========================================================================
+// Real supplier documents (scripts/fixtures/suppliers/*.pdf, supplied by the owner)
+// ===========================================================================
+async function loadDoc(file: string) {
+  const parsed = await parseCatalogueFile(fixture(`suppliers/${file}`), file, 'pdf');
+  const sheet = parsed.sheets[0];
+  const table = sheetToTable(sheet, detectHeaderRow(sheet.rows));
+  const mapping = autoMapColumns(table.headers, table.rows.map(r => r.cells), parsed.document.kind);
+  const rows = reviewDrafts([], buildDrafts(table, mapping, { source: 'pdf', supplier: { name: 'Test Supplier' } }, sheet));
+  const by = (code: string) => {
+    const r = rows.find(x => x.product.supplierCode === code);
+    if (!r) throw new Error(`${file}: row ${code} not found`);
+    return r;
+  };
+  const counts = countReview(rows, withDefaultSelection(rows, emptySelection(), new Set()), sourceRowCount(sheet));
+  return { parsed, sheet, table, rows, by, counts, map: mapOf(table.headers, mapping) };
+}
+const noise = /sub ?total|page:|quote is valid|abn|phone|terms|conditions|delivery address|total amount|gst total/i;
+
+async function realSupplierDocuments() {
+  section('Real document: KJ Bolt quotation 70294 (7 pages)');
+  const kj = await loadDoc('kjbolt-quotation-70294.pdf');
+  check('recognised as a quotation with its reference', [kj.parsed.document.kind, kj.parsed.document.reference], ['quotation', '70294']);
+  check('KJ mapping: quoted qty, basis, discount, line total, section', kj.map, {
+    Code: 'supplierCode', Description: 'name', Quantity: 'quotedQuantity', Per: 'priceBasisQuantity', Price: 'purchasePrice', 'Disc %': 'discountPercent', 'Ex. GST': 'lineTotal', Section: 'category',
+  });
+  check('108 product rows; headers, metadata and footers left out', [kj.rows.length, kj.sheet.layout?.productRows, kj.sheet.layout?.headingLines], [108, 108, 5]);
+  check('no metadata / totals / page footers among products', kj.rows.filter(r => noise.test(r.product.name)).map(r => r.product.name), []);
+  const stp = kj.by('STP060012A2');
+  check('STP060012A2: $0.01770 each, precision kept', [stp.product.purchasePrice, stp.product.priceBasisQuantity, stp.product.priceBasisUnit], [0.0177, 1, 'each']);
+  check('STP060012A2: quoted 1,000 is NOT a pack size', [stp.reference.quotedQuantity, stp.product.unitsPerOrderUnit, stp.product.orderUnit], [1000, undefined, undefined]);
+  check('STP060012A2: 1,000 × $0.0177 reconciles with $17.70', [stp.reference.lineTotal, stp.reference.check?.status, stp.status], [17.7, 'match', 'ready']);
+  check('STP060012A2: price label keeps 4 decimals', unitPriceLabel(stp.product), '$0.0177 per each');
+  const el = kj.by('EL010505T');
+  check('EL010505T: 15% discount applied to net price (2.55793 → 2.17424)', [Math.round((el.product.purchasePrice ?? 0) * 1e5) / 1e5, el.reference.listPrice, issueCodes(el).includes('discount-applied'), el.status], [2.17424, 2.55793, true, 'ready']);
+  check('section headings become categories', [stp.product.category, new Set(kj.rows.map(r => r.product.category)).size, kj.rows.some(r => r.product.category === 'Uncategorized')], ['FIXINGS + RIVETS', 5, false]);
+  const sundry = kj.rows.filter(r => issueCodes(r).includes('placeholder-code'));
+  check('SUNDRY lines are distinct products, not duplicates of each other', [sundry.length, sundry.some(r => r.category === 'existing')], [7, false]);
+  check('$0 SUNDRY lines need review (price left blank)', kj.rows.filter(r => issueCodes(r).includes('zero-price')).map(r => `${r.status}:${r.product.purchasePrice}`), ['review:undefined', 'review:undefined']);
+  check('"4LTR" / "1LTR" per-cell read as a container, confirm', [kj.rows.find(r => r.product.name.startsWith('METHYLATED'))?.status, kj.rows.find(r => r.product.name.startsWith('MINERAL TURPS'))?.product.priceBasisUnit], ['review', 'each']);
+  check('KJ counts: 104 ready, 4 review, 0 existing, 0 cannot', [kj.counts.ready, kj.counts.review, kj.counts.existing, kj.counts.cannotImport, kj.counts.sourceRows], [104, 4, 0, 0, 200]);
+
+  section('Real document: Austain price quote QBN57097');
+  const au = await loadDoc('austain-price-quote-qbn57097.pdf');
+  check('recognised as a price quote', [au.parsed.document.kind, au.parsed.document.label], ['price-list', 'Price quote QBN57097']);
+  check('Austain mapping: box qty = pack, unit = basis', [au.map['CUSTOMER CODE'], au.map['BOX QTY'], au.map['UNIT'], au.map['UNIT PRICE']], ['customerCode', 'unitsPerOrderUnit', 'priceBasisQuantity', 'purchasePrice']);
+  const g = au.by('G100-06032');
+  check('G100-06032: box of 1,000 at $4.56 per 100', [g.product.purchasePrice, g.product.priceBasisQuantity, g.product.unitsPerOrderUnit, g.product.orderUnit, g.status], [4.56, 100, 1000, 'box of 1,000', 'ready']);
+  check('G100-06032: one box costs $45.60', lineTotalExGst(g.product, 1), 45.6);
+  check('freight line cannot be imported', [au.by('FBFIS').status, issueCodes(au.by('FBFIS')).includes('freight')], ['invalid', true]);
+  check('16 rows: 15 products + freight', [au.rows.length, au.counts.ready, au.counts.cannotImport], [16, 15, 1]);
+
+  section('Real document: Austain quote QBN57097 (TAX / CODE header on 3 lines)');
+  const aq = await loadDoc('austain-quote-qbn57097.pdf');
+  check('multi-line header merged', aq.table.headers.includes('TAX CODE'), true);
+  check('quote mapping', [aq.map.QUANTITY, aq.map['AMOUNT (EX GST)'], aq.map.UNIT], ['quotedQuantity', 'lineTotal', 'priceBasisQuantity']);
+  const aq1 = aq.by('G100-06032');
+  check('qty 1,000 × $4.56 per 100 reconciles', [aq1.reference.check?.status, aq1.reference.check?.basis, aq1.product.unitsPerOrderUnit], ['match', 100, undefined]);
+  check('quote: 15 ready + freight', [aq.counts.ready, aq.counts.cannotImport], [15, 1]);
+
+  section('Real document: Austain price quote QBN57099 (wrapped notes)');
+  const a9 = await loadDoc('austain-price-quote-qbn57099.pdf');
+  check('wrapped description lines joined, not new products', [a9.sheet.layout?.continuationLines, a9.rows.length], [7, 24]);
+  check('wrapped note attached to its product', a9.by('G810-10022').product.name, '10Gx22 G550 WAFER XR SDS METAL IN LIEU OF 5/8 (16MM) LENGTH REQUEST.');
+  check('freight with a price still cannot be imported', a9.by('FBFLI').status, 'invalid');
+
+  section('Real document: Suncoast quotation QT012721 (7 pages, 2-line headings)');
+  const sc = await loadDoc('suncoast-qt012721.pdf');
+  check('Suncoast mapping incl. supplier stock and GST', [sc.map['Qty. Ord.'], sc.map['Qty. ExStck'], sc.map['PER'], sc.map['Total Ex GST'], sc.map['GST'], sc.map['Total Amount']], ['quotedQuantity', 'supplierStock', 'priceBasisQuantity', 'lineTotal', 'gstAmount', 'lineTotalIncGst']);
+  const s1 = sc.by('STPQ06012-S4');
+  check('STPQ06012-S4: $20 per 1,000', [s1.product.purchasePrice, s1.product.priceBasisQuantity, s1.status], [20, 1000, 'ready']);
+  check('supplier stock (524) is reference only; own stock 0', [s1.reference.supplierStock, s1.product.currentStock], [524, 0]);
+  check('92 product rows, 15 wrapped lines joined, T&C page excluded', [sc.rows.length, sc.sheet.layout?.continuationLines, sc.rows.filter(r => noise.test(r.product.name)).length], [92, 15, 0]);
+  check('per-100 rows read too', [sc.by('MTCM04X016-S4').product.priceBasisQuantity, sc.by('MTCM04X016-S4').product.purchasePrice], [100, 5.02]);
+  check('all Suncoast rows importable', sc.counts.cannotImport, 0);
+
+  section('Real document: Baker debtors special price listing');
+  const bk = await loadDoc('baker-debtors-special-price-listing.pdf');
+  check('recognised as a price list', bk.parsed.document.kind, 'price-list');
+  check('Baker mapping (Value = price, Unit = basis)', bk.map, { 'Stock Code': 'supplierCode', Description: 'name', Value: 'purchasePrice', Unit: 'priceBasisQuantity' });
+  check('carton-priced row stocked by the carton', [bk.by('20.001').product.priceBasisUnit, bk.by('20.001').product.stockUnit], ['carton', 'carton']);
+  const hbf = bk.by('69.016');
+  check('"12/Ctn" in description but priced each: info only, pack not applied', [hbf.status, hbf.product.purchasePrice, hbf.product.unitsPerOrderUnit, issueCodes(hbf).includes('pack-hint')], ['ready', 9.25, undefined, true]);
+  check('"12/Ct" with no unit given → ambiguous, flagged', [bk.by('69.015').status, issueCodes(bk.by('69.015')).includes('ambiguous-basis')], ['review', true]);
+  check('22 Baker rows, 1 review', [bk.rows.length, bk.counts.review], [22, 1]);
+
+  section('Real document: Hume timber reveals (scanned image)');
+  let humeKind = 'parsed';
+  try { await parseCatalogueFile(fixture('suppliers/hume-timber-reveals.pdf'), 'hume.pdf', 'pdf'); } catch (e) { humeKind = e instanceof PdfLimitationError ? e.kind : 'other'; }
+  check('Hume PDF has no text layer → explained, nothing guessed', humeKind, 'no-text');
+}
+
+// ===========================================================================
+// Pricing rules (general, not supplier-specific)
+// ===========================================================================
+function pricingRules() {
+  section('Price / line-total reconciliation');
+  check('per each: 1,000 × 0.0177 = 17.70', reconcileLine({ quantity: 1000, price: 0.0177, lineTotal: 17.7 }), { status: 'match', basis: 1, discountApplied: false, expected: 17.7, shown: 17.7 });
+  check('per 100 worked out from the total', reconcileLine({ quantity: 1000, price: 4.56, lineTotal: 45.6 }).basis, 100);
+  check('per 1,000 worked out from the total', reconcileLine({ quantity: 5000, price: 20, lineTotal: 100 }).basis, 1000);
+  check('discount: list 2.55793 less 15% = 2.18', reconcileLine({ quantity: 1, price: 2.55793, discountPercent: 15, lineTotal: 2.18 }).discountApplied, true);
+  check('discount column already applied to the price', reconcileLine({ quantity: 2, price: 5, discountPercent: 10, lineTotal: 10 }).discountApplied, false);
+  check('price that includes GST detected', reconcileLine({ quantity: 2, price: 11, lineTotal: 20 }).incGst, true);
+  check('inc-GST total only', reconcileLine({ quantity: 2, price: 10, lineTotalIncGst: 22 }).status, 'match');
+  check('mismatch reported, never forced', reconcileLine({ quantity: 10, price: 3, basis: 1, lineTotal: 50 }).status, 'mismatch');
+  check('rounding tolerance (0.5%) accepted', reconcileLine({ quantity: 3, price: 0.33333, lineTotal: 1.0 }).status, 'match');
+  check('low-cost precision kept by the money parser', parseMoney('$0.01770').value, 0.0177);
+
+  section('Pricing in drafts');
+  const ctx = { source: 'csv' as const, supplier: { name: 'S' } };
+  const q1 = buildDraft('a', 1, { name: 'Screw', supplierCode: 'X1', quotedQuantity: '1000', purchasePrice: '0.0177', lineTotal: '17.70' }, ctx);
+  check('quote line: quoted qty never becomes pack; priced each', [q1.product.unitsPerOrderUnit, q1.reference.check?.basis, effectivePriceBasisQuantity(q1.product), q1.status], [undefined, 1, 1, 'ready']);
+  const q2 = buildDraft('b', 2, { name: 'Screw', supplierCode: 'X2', quotedQuantity: '1000', purchasePrice: '4.56', lineTotal: '45.60' }, ctx);
+  check('basis worked out from the line total (per 100), explained', [q2.product.priceBasisQuantity, issueCodes(q2).includes('basis-from-total'), q2.status], [100, true, 'ready']);
+  const q3 = buildDraft('c', 3, { name: 'Bolt', supplierCode: 'X3', quotedQuantity: '10', purchasePrice: '3.00', priceBasisQuantity: 'EA', lineTotal: '50.00' }, ctx);
+  check('total mismatch flagged for review', [q3.status, issueCodes(q3).includes('total-mismatch')], ['review', true]);
+  const q4 = buildDraft('d', 4, { name: 'Tape', supplierCode: 'X4', quotedQuantity: '1', purchasePrice: '2.55793', discountPercent: '15', lineTotal: '2.18' }, ctx);
+  check('discounted net price used', [Math.round((q4.product.purchasePrice ?? 0) * 1e5) / 1e5, q4.reference.listPrice], [2.17424, 2.55793]);
+  const inc = buildDraft('e', 5, { name: 'Sealant', supplierCode: 'X5', purchasePriceIncGst: '11.00' }, ctx);
+  check('inc-GST price converted to ex GST, flagged', [inc.product.purchasePrice, issueCodes(inc).includes('price-inc-gst'), inc.status], [10, true, 'review']);
+  const per100 = buildDraft('f', 6, { name: 'Screw', supplierCode: 'X6', purchasePrice: '12.50', priceBasisQuantity: 'per 100', orderUnit: 'Box of 1000' }, ctx);
+  check('per 100 + box of 1000 → $125 per box', [per100.status, lineTotalExGst(per100.product, 1)], ['ready', 125]);
+  const per1000 = buildDraft('g', 7, { name: 'Rivet', supplierCode: 'X7', purchasePrice: '15', priceBasisQuantity: '/1000', orderUnit: 'Box of 500' }, ctx);
+  check('per 1,000 + box of 500 → $7.50 per box', lineTotalExGst(per1000.product, 1), 7.5);
+  const carton = buildDraft('h', 8, { name: 'Silicone', supplierCode: 'X8', purchasePrice: '99', priceBasisQuantity: 'CTN', unitsPerOrderUnit: '12' }, ctx);
+  check('carton price', [carton.product.priceBasisUnit, carton.status], ['carton', 'ready']);
+
+  section('Per-lineal-metre rates (rows transcribed from a Hume-style timber list; NOT parsed from the scanned PDF)');
+  const lmCsv = ['Code,Description,Rate,Per,Pack', 'RV-1418,Pine reveal 140x18,7.20,LM,', 'RV-9218,Pine reveal 92x18 5.4m lengths,4.85,LM,Pack of 10'].join('\n');
+  const lmSheet = parseCsvToSheet(lmCsv);
+  const lmTable = sheetToTable(lmSheet, 0);
+  const lmRows = buildDrafts(lmTable, autoMapColumns(lmTable.headers, lmTable.rows.map(r => r.cells)), ctx, lmSheet);
+  check('per lm row: stocked in metres, 3 m = $21.60', [lmRows[0].product.priceBasisUnit, lmRows[0].product.stockUnit, lmRows[0].status, lineTotalExGst(lmRows[0].product, 3)], ['metre', 'metre', 'ready', 21.6]);
+  check('per lm rate with a pack of 10 lengths → flagged, not multiplied', [lmRows[1].status, issueCodes(lmRows[1]).includes('unit-mismatch')], ['review', true]);
+  check('price heading "Rate /lm" sets the basis', basisFromHeader('Rate /lm'), { quantity: 1, unit: 'metre' });
+  check('price heading "Price per 100"', basisFromHeader('Price per 100'), { quantity: 100, unit: 'each' });
+}
+
+// ===========================================================================
+// Mapping: wrong / ambiguous headings, overrides
+// ===========================================================================
+function mappingRules() {
+  section('Column mapping from headings, values and arithmetic');
+  const rows = [['A1', 'Widget', '10', '2.50', '25.00'], ['A2', 'Gadget', '4', '10.00', '40.00'], ['A3', 'Doohickey', '2', '7.25', '14.50']];
+  const m1 = autoMapColumns(['Item', 'Description', 'Qty', 'Value', 'Amount'], rows, 'quotation');
+  check('vague headings: arithmetic picks unit price vs line total', [m1[3], m1[4]], ['purchasePrice', 'lineTotal']);
+  const swapped = autoMapColumns(['Item', 'Description', 'Qty', 'Total', 'Price'], rows, 'quotation');
+  check('mislabelled price/total columns swapped by arithmetic', [swapped[3], swapped[4]], ['purchasePrice', 'lineTotal']);
+  const onlyTotal = autoMapColumns(['Code', 'Description', 'Ex GST'], [['A1', 'Widget', '2.50']]);
+  check('no quantity: lone "Ex GST" column is the price', onlyTotal[2], 'purchasePrice');
+  const stockReport = autoMapColumns(['Code', 'Description', 'Qty'], [['A1', 'Widget', '40']], 'stock-report');
+  check('stock report quantity = supplier stock, never own stock', stockReport[2], 'supplierStock');
+  check('stock report recognised', detectDocumentKind('Stock on hand report as at 1 Oct', ['Code', 'Qty']).kind, 'stock-report');
+  check('catalogue recognised', detectDocumentKind('2026 Product Catalogue', ['Code', 'Description']).kind, 'catalogue');
+
+  section('Overrides survive mapping changes');
+  const sheet = parseCsvToSheet(['Code,Name,Price,Per', 'C1,Clip,0.50,M', 'C2,Hook,1.20,EA'].join('\n'));
+  const table = sheetToTable(sheet, 0);
+  const mapA = autoMapColumns(table.headers, table.rows.map(r => r.cells));
+  const before = buildDrafts(table, mapA, { source: 'csv', supplier: {} }, sheet);
+  check('ambiguous "M" stays flagged', before[0].status, 'review');
+  const key = draftKey(table.rows[0].rowNumber);
+  const overrides = { [key]: { ...before[0].values, priceBasisQuantity: '1000' } };
+  const mapB: ColumnMapping = [...mapA];
+  mapB[1] = null; // user unmaps Name
+  const after = buildDrafts(table, mapB, { source: 'csv', supplier: {} }, sheet, overrides);
+  check('edited row keeps its edits after a mapping change', [after[0].product.name, after[0].product.priceBasisQuantity, after[0].status], ['Clip', 1000, 'ready']);
+  check('unedited row follows the new mapping', after[1].status, 'invalid');
+  check('rowValues reads a row under a mapping', rowValues(['C9', 'Nail', '0.10', 'EA'], mapA, {}).name, 'Nail');
+
+  section('Workflow navigation');
+  check('Back from each stage', [stepBefore('review'), stepBefore('columns'), stepBefore('file'), stepBefore('supplier')], ['columns', 'file', 'supplier', null]);
+}
+
+// ===========================================================================
+// Selection, exclusion, counts and completion accounting
+// ===========================================================================
+function selectionAndAccounting() {
+  section('Selection, exclusion and restore');
+  const ctx = { source: 'csv' as const, supplier: { name: 'S' } };
+  const drafts: CatalogueDraft[] = [];
+  for (let i = 1; i <= 100; i++) {
+    drafts.push(buildDraft(`r${i}`, i, { name: `Item ${i}`, supplierCode: `C${i}`, purchasePrice: i <= 90 ? '1.00' : '0', priceBasisQuantity: 'EA' }, ctx));
+  }
+  drafts.push(buildDraft('r101', 101, { name: 'Already stocked', supplierCode: 'OLD', purchasePrice: '2', priceBasisQuantity: 'EA' }, ctx));
+  drafts.push(buildDraft('r102', 102, { name: 'Freight charge', supplierCode: 'FRT', purchasePrice: '15' }, ctx));
+  const existing = [{ ...drafts[100].product, id: 'p-old' }] as Product[];
+  const rows = reviewDrafts(existing, drafts);
+  let sel = withDefaultSelection(rows, emptySelection(), new Set());
+  check('defaults: only ready rows selected', sel.selected.size, 90);
+  sel = selectAllRemaining(rows, sel);
+  check('Select All Remaining = 100 eligible (ready + review)', sel.selected.size, 100);
+  check('never selects existing or blocking rows', [sel.selected.has('r101'), sel.selected.has('r102')], [false, false]);
+  sel = excludeRows(sel, ['r1', 'r2', 'r3', 'r95']);
+  sel = deselectAll(sel);
+  sel = selectAllRemaining(rows, sel);
+  check('exclude 4, Select All Remaining → 96', sel.selected.size, 96);
+  sel = selectAllReady(rows, deselectAll(sel));
+  check('Select All Ready skips excluded rows (90 − 3)', sel.selected.size, 87);
+  check('tapping an excluded row does not select it', toggleSelected(sel, 'r1').selected.has('r1'), false);
+  const restored = restoreRows(sel, ['r1']);
+  check('restore: row returns unselected, others unchanged', [restored.excluded.size, restored.selected.has('r1'), restored.selected.size], [3, false, 87]);
+  const seen = new Set(rows.map(r => r.key));
+  const userChoice = toggleSelected(restored, 'r10');
+  check('re-review keeps user choices (no re-default)', withDefaultSelection(rows, userChoice, seen).selected.has('r10'), false);
+  check('selected rows are what imports', selectedForImport(rows, restored).length, 87);
+
+  section('Review counts');
+  const c = countReview(rows, restored, 250);
+  check('counts', [c.sourceRows, c.productRows, c.ready, c.review, c.existing, c.cannotImport, c.excluded, c.selected], [250, 102, 88, 9, 1, 1, 3, 87]);
+  check('buckets add up to recognised rows', c.ready + c.review + c.existing + c.cannotImport + c.excluded, c.productRows);
+
+  section('Completion accounting (each row counted once)');
+  const total = (a: ImportAccounting) => a.imported + a.existingAtSave + a.saveFailed + a.notAttempted + a.existingSkipped + a.userExcluded + a.cannotImport + a.notSelected;
+  const ok = buildImportAccounting(rows, restored, 250, { imported: 87, skippedAsExisting: 0, failed: 0 });
+  check('all saved', [ok.imported, ok.userExcluded, ok.existingSkipped, ok.cannotImport, ok.notSelected], [87, 3, 1, 1, 10]);
+  check('no double counting: totals = recognised rows', total(ok), 102);
+  const partial = buildImportAccounting(rows, restored, 250, { imported: 50, skippedAsExisting: 2, failed: 10 });
+  check('save failure: imported / existing at save / failed / not attempted', [partial.imported, partial.existingAtSave, partial.saveFailed, partial.notAttempted], [50, 2, 10, 25]);
+  check('save failure totals still add up', total(partial), 102);
+  const over = buildImportAccounting(rows, restored, 250, { imported: 500, skippedAsExisting: 0, failed: 0 });
+  check('never reports more saves than were selected', over.imported, 87);
 }
 
 /** Minimal single-page PDF writer (Helvetica) for parser edge cases. */

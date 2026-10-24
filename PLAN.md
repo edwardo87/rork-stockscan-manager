@@ -58,7 +58,14 @@ forward from later chapters and do not expand a chapter's scope while implementi
   - [x] Scanned/encrypted/table-less PDFs explained, never guessed (no OCR).
   - [x] Purchasing fields held on device pre-migration and flushed automatically once the columns exist.
   - [x] Structured template CSV importer kept as fallback.
-  - [x] Automated checks: `expo/scripts/verify-catalogue-import.ts` (81 pass).
+  - [x] Universal supplier import upgrade (24 Oct 2026):
+    - Document recognition (quotation / price list / catalogue / stock report). Repeated page headers are filtered and wrapped rows merged. Freight, charges, totals and GST lines can never be selected.
+    - Each value keeps its own meaning: supplier vs customer code; pack qty vs quoted qty vs supplier stock; unit price vs line total; discount; GST.
+    - Price bases per each / pack / 100 / 1,000 / lineal metre, with 5-decimal precision. Line-total reconciliation flags mismatches instead of guessing. Sundry/placeholder codes are not treated as identifiers.
+    - Back moves one stage at a time and keeps all progress; the discard prompt appears only when closing the workflow.
+    - Review: checkbox + bin per row (session-only, restorable), Select all ready / Select all remaining / Deselect all, a Removed view, and full counts.
+    - The completion summary counts every product exactly once (fixes "98 added + 152 left out").
+  - [x] Automated checks: `expo/scripts/verify-catalogue-import.ts` (171 pass, including 6 real supplier documents in `expo/scripts/fixtures/suppliers/`).
   - [ ] Device acceptance with real supplier files; only then mark the chapter complete.
 - Chapter 5 — Complete storeroom ordering experience: not started.
 - Chapter 6 — Periodic stocktake and optional stock guidance: not started.

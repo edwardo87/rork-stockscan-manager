@@ -44,20 +44,29 @@ alter table public.products add column if not exists purchase_price       numeri
 alter table public.products add column if not exists price_basis_quantity numeric not null default 1;
 alter table public.products add column if not exists price_basis_unit     text   not null default '';
 
--- Backfill: existing stock units live in the legacy `unit` column (unless it
--- holds a pack-size string — those are left empty and default to 'each' in
--- the app). Price basis defaults to the stock unit.
+-- Backfill: existing stock units live in the legacy `unit` column — UNLESS it
+-- holds a pack-size description ("box of 12", "pack of 1000", "carton of 6").
+-- Such strings must NEVER become a stock unit or a price-basis unit; those
+-- rows are set to 'each' and the real pack size is entered in the app via
+-- order_unit / units_per_order_unit. Price basis defaults to the stock unit.
 update public.products
    set stock_unit = unit
  where stock_unit = ''
    and unit <> ''
    and unit !~ '[0-9]';   -- skip pack-size strings like "box of 12"
 
+-- Price basis: prefer the cleaned stock unit; fall back to a CLEANED legacy
+-- unit (digit-free only); pack-size strings fall back to 'each', never to the
+-- pack description itself.
 update public.products
-   set price_basis_unit = case when stock_unit <> '' then stock_unit else unit end
- where price_basis_unit = ''
-   and (stock_unit <> '' or unit <> '');
+   set price_basis_unit = case
+         when stock_unit <> '' then stock_unit
+         when unit <> '' and unit !~ '[0-9]' then unit
+         else 'each'
+       end
+ where price_basis_unit = '';
 
+-- Safety net (should find no rows after the statement above).
 update public.products
    set price_basis_unit = 'each'
  where price_basis_unit = '';
@@ -85,6 +94,11 @@ commit;
 -- =============================================================================
 -- Integrity checks (run after the transaction; SELECT-only, make no changes)
 -- =============================================================================
+-- Pack-size strings must never appear as stock or price-basis units:
+--   select id, unit, stock_unit, price_basis_unit from public.products
+--    where stock_unit ~ '[0-9]' or price_basis_unit ~ '[0-9]';
+--   -- expected: 0 rows
+--
 -- Every product must have a non-empty price basis:
 --   select count(*) from public.products where price_basis_unit = '';
 --   -- expected: 0

@@ -106,7 +106,7 @@ function normaliseHeader(raw: string): string {
 /**
  * Parses a single CSV line, supporting quoted values and a chosen delimiter.
  */
-function parseCSVLine(line: string, delimiter: string = ','): string[] {
+export function parseCSVLine(line: string, delimiter: string = ','): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -310,7 +310,7 @@ export function parseCSVWithSummary(csvContent: string): CSVImportResult {
  * so non-UUID strings (e.g. `PROD_ABCD_123456_1`) cause `invalid input syntax
  * for type uuid` errors on bulk insert.
  */
-function generateProductId(_index: number, _identifier: string): string {
+export function generateProductId(_index: number, _identifier: string): string {
   // Prefer the platform's crypto.randomUUID when available (modern Hermes / web).
   const g: { crypto?: { randomUUID?: () => string } } = globalThis as unknown as {
     crypto?: { randomUUID?: () => string };
@@ -326,7 +326,7 @@ function generateProductId(_index: number, _identifier: string): string {
   });
 }
 
-function generateSKU(name: string): string {
+export function generateSKU(name: string): string {
   const cleanName = name.replace(/[^a-zA-Z0-9\s]/g, '').toUpperCase();
   const words = cleanName.split(/\s+/).filter(w => w.length > 0);
   const initials = words.map(w => w.charAt(0)).join('').slice(0, 4) || 'PROD';
@@ -334,7 +334,7 @@ function generateSKU(name: string): string {
   return `${initials}${timestamp}`;
 }
 
-function generateBarcode(): string {
+export function generateBarcode(): string {
   const timestamp = Date.now().toString();
   const random = Math.random().toString().slice(2, 6);
   return timestamp.slice(-8) + random;
@@ -390,22 +390,34 @@ function textDiffers(a: string | undefined, b: string | undefined): boolean {
   return norm(a || undefined) !== norm(b || undefined);
 }
 
+export type RowMatchStatus = 'new' | 'duplicate' | 'conflict';
+
+export interface RowMatch {
+  status: RowMatchStatus;
+  /** Human-readable explanation (empty for plain new rows). */
+  reason: string;
+  /** The existing product the row matched, when any. */
+  match?: Product;
+}
+
 /**
  * Classifies incoming catalogue rows against existing products so repeated
  * supplier imports can never silently duplicate the catalogue:
  *
- *  - identity match: barcode (when the row has one) else normalised name;
+ *  - identity match: barcode (when the row has one), then supplier code for
+ *    the same supplier, then normalised name;
  *  - row with identical meaning to the existing product → DUPLICATE (skipped);
  *  - row matching a product but carrying conflicting data (supplier, code,
  *    units, prices…) → CONFLICT (skipped and reported — never overwritten);
  *  - no match → NEW (imported).
  *
- * Unspecified/derived fields (default 'each', 'Unknown Supplier', generated
- * barcodes, zero prices) are treated as "not provided" so they cannot cause
- * false conflicts. Existing records are NEVER modified.
+ * Unspecified/derived fields (default 'each', 'Unknown Supplier', zero
+ * prices) are treated as "not provided" so they cannot cause false
+ * conflicts. Existing records are NEVER modified. Returns one result per
+ * incoming row, in order.
  */
-export function matchProductsForImport(existing: Product[], incoming: Product[]): ImportMatchOutcome {
-  const outcome: ImportMatchOutcome = { toAdd: [], duplicates: 0, conflicts: 0, details: [] };
+export function matchRowsForImport(existing: Product[], incoming: Product[]): RowMatch[] {
+  const results: RowMatch[] = [];
 
   // Keys of products already in the catalogue. A value of `null` marks an
   // AMBIGUOUS key (two or more existing products share it) — matching by such
@@ -413,29 +425,39 @@ export function matchProductsForImport(existing: Product[], incoming: Product[])
   // handling rather than silently matching one of them.
   const barcodeKeys = new Map<string, Product | null>();
   const nameKeys = new Map<string, Product | null>();
+  const codeKeys = new Map<string, Product | null>();
   for (const p of existing) {
     const bc = norm(p.barcode);
     if (bc) barcodeKeys.set(bc, barcodeKeys.has(bc) ? null : p);
     const nk = norm(p.name);
     if (nk) nameKeys.set(nk, nameKeys.has(nk) ? null : p);
+    const sc = norm(p.supplierCode);
+    if (sc) {
+      const ck = `${norm(p.supplier)}|${sc}`;
+      codeKeys.set(ck, codeKeys.has(ck) ? null : p);
+    }
   }
 
   // Keys seen so far in this import batch (in-file duplicates too).
   const seenKeys = new Set<string>();
 
-  const keyOf = (p: Product): string | null => {
+  const keysOf = (p: Product): string[] => {
+    const keys: string[] = [];
     const bc = norm(p.barcode);
-    if (bc) return `bc:${bc}`;
+    if (bc) keys.push(`bc:${bc}`);
+    const sc = norm(p.supplierCode);
+    if (sc) keys.push(`sc:${norm(p.supplier)}|${sc}`);
     const nk = norm(p.name);
-    return nk ? `nm:${nk}` : null;
+    if (!bc && !sc && nk) keys.push(`nm:${nk}`);
+    return keys;
   };
 
   for (const row of incoming) {
     const bc = norm(row.barcode);
     const nk = norm(row.name);
+    const sc = norm(row.supplierCode);
+    const supplierProvided = !!row.supplier && row.supplier !== 'Unknown Supplier';
 
-    // A row that provides a barcode is only trusted against the catalogue
-    // when that barcode exists; otherwise fall back to the name.
     let match: Product | undefined;
     let matchReason = '';
     let ambiguous = false;
@@ -445,8 +467,19 @@ export function matchProductsForImport(existing: Product[], incoming: Product[])
         match = found;
         matchReason = `barcode ${row.barcode}`;
       } else {
-        // Two or more catalogue products share this barcode — refuse to guess.
         ambiguous = true;
+      }
+    }
+    if (!match && !ambiguous && sc && supplierProvided) {
+      const ck = `${norm(row.supplier)}|${sc}`;
+      if (codeKeys.has(ck)) {
+        const found = codeKeys.get(ck);
+        if (found) {
+          match = found;
+          matchReason = `supplier code ${row.supplierCode}`;
+        } else {
+          ambiguous = true;
+        }
       }
     }
     if (!match && !ambiguous && nk && nameKeys.has(nk)) {
@@ -455,45 +488,42 @@ export function matchProductsForImport(existing: Product[], incoming: Product[])
         match = found;
         matchReason = `name "${row.name}"`;
       } else {
-        // Duplicate catalogue names — refuse to guess.
         ambiguous = true;
       }
     }
 
     if (ambiguous) {
-      outcome.conflicts++;
-      outcome.details.push(
-        `"${row.name}": multiple existing products share the same barcode/name — skipped, review manually.`,
-      );
+      results.push({
+        status: 'conflict',
+        reason: 'Several existing products share this barcode, supplier code or name — review manually.',
+      });
       continue;
     }
 
     if (!match) {
-      const key = keyOf(row);
-      if (key && seenKeys.has(key)) {
-        outcome.duplicates++;
-        outcome.details.push(`"${row.name}": repeated within the import file — skipped.`);
+      const keys = keysOf(row);
+      if (keys.some(k => seenKeys.has(k))) {
+        results.push({ status: 'duplicate', reason: 'Repeated within the import file.' });
       } else {
-        if (key) seenKeys.add(key);
-        outcome.toAdd.push(row);
+        keys.forEach(k => seenKeys.add(k));
+        results.push({ status: 'new', reason: '' });
       }
       continue;
     }
 
     // An imported row that carries its own barcode while matching by name is
     // ambiguous when the barcodes differ — could be a different real product.
-    if (bc && nk && nameKeys.has(nk) && !barcodeKeys.has(bc) && norm(match.barcode)) {
-      outcome.conflicts++;
-      outcome.details.push(
-        `"${row.name}": name matches an existing product but barcode ${row.barcode} differs (${matchReason}) — skipped, review manually.`,
-      );
+    if (bc && matchReason.startsWith('name') && !barcodeKeys.has(bc) && norm(match.barcode)) {
+      results.push({
+        status: 'conflict',
+        match,
+        reason: `Name matches an existing product but barcode ${row.barcode} differs — review manually.`,
+      });
       continue;
     }
 
     const conflictReasons: string[] = [];
-
-    // Only provided/meaningful values can conflict.
-    if (row.supplier && row.supplier !== 'Unknown Supplier' && textDiffers(row.supplier, match.supplier)) {
+    if (supplierProvided && textDiffers(row.supplier, match.supplier)) {
       conflictReasons.push(`supplier ("${row.supplier}" vs "${match.supplier}")`);
     }
     if (row.supplierCode && textDiffers(row.supplierCode, match.supplierCode)) {
@@ -522,14 +552,34 @@ export function matchProductsForImport(existing: Product[], incoming: Product[])
     }
 
     if (conflictReasons.length > 0) {
-      outcome.conflicts++;
-      outcome.details.push(`"${row.name}": matches existing product by ${matchReason} but differs in ${conflictReasons.join(', ')} — skipped, review manually.`);
+      results.push({
+        status: 'conflict',
+        match,
+        reason: `Matches existing "${match.name}" by ${matchReason} but differs in ${conflictReasons.join(', ')} — existing product left unchanged.`,
+      });
       continue;
     }
 
-    outcome.duplicates++;
-    outcome.details.push(`"${row.name}": already exists (${matchReason}) — skipped as duplicate.`);
+    results.push({ status: 'duplicate', match, reason: `Already in your catalogue (${matchReason}).` });
   }
 
+  return results;
+}
+
+/** Batch form of {@link matchRowsForImport} used by the structured CSV importer. */
+export function matchProductsForImport(existing: Product[], incoming: Product[]): ImportMatchOutcome {
+  const outcome: ImportMatchOutcome = { toAdd: [], duplicates: 0, conflicts: 0, details: [] };
+  const results = matchRowsForImport(existing, incoming);
+  results.forEach((r, i) => {
+    const row = incoming[i];
+    if (r.status === 'new') outcome.toAdd.push(row);
+    else if (r.status === 'duplicate') {
+      outcome.duplicates++;
+      outcome.details.push(`"${row.name}": ${r.reason} Skipped.`);
+    } else {
+      outcome.conflicts++;
+      outcome.details.push(`"${row.name}": ${r.reason} Skipped.`);
+    }
+  });
   return outcome;
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Info, Wrench, FileText, BookOpen, Trash2, Building2, Truck } from 'lucide-react-native';
+import { Info, Wrench, FileText, BookOpen, Trash2, Building2, Truck, FileSpreadsheet } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationsStore } from '@/store/notificationsStore';
 import { useInventoryStore } from '@/store/inventoryStore';
@@ -222,6 +222,23 @@ export default function SettingsScreen() {
               </Text>
               <Text style={[styles.settingDescription, { color: colors.inactive }]}>
                 Manage supplier contacts and ordering emails
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.settingRow, { borderTopColor: colors.border }]}
+          onPress={() => router.push('/catalogue-import')}
+        >
+          <View style={styles.settingInfo}>
+            <FileSpreadsheet size={22} color={colors.text} style={styles.settingIcon} />
+            <View>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>
+                Import Supplier Catalogue
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
+                Add products from a CSV, Excel or PDF price list
               </Text>
             </View>
           </View>

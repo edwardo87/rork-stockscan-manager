@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Search, Filter, Plus, Upload, FileText, QrCode } from 'lucide-react-native';
+import { Search, Filter, Plus, Upload, FileText, QrCode, FileSpreadsheet } from 'lucide-react-native';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useThemeStore } from '@/store/themeStore';
 import ProductCard from '@/components/ProductCard';
@@ -219,14 +219,29 @@ export default function ProductsScreen() {
               </View>
             </TouchableOpacity>
             
+            <TouchableOpacity
+              style={[styles.uploadOption, { borderBottomColor: colors.border }]}
+              onPress={() => {
+                setShowUploadOptions(false);
+                router.push('/catalogue-import');
+              }}
+              testID="import-supplier-catalogue"
+            >
+              <FileSpreadsheet size={20} color={colors.primary} />
+              <View style={styles.uploadOptionText}>
+                <Text style={[styles.uploadOptionTitle, { color: colors.text }]}>Import Supplier Catalogue</Text>
+                <Text style={[styles.uploadOptionDescription, { color: colors.inactive }]}>Price list as CSV, Excel or PDF — review before anything is added</Text>
+              </View>
+            </TouchableOpacity>
+
             <TouchableOpacity 
               style={[styles.uploadOption, { borderBottomColor: colors.border }]}
               onPress={handleCSVImport}
             >
               <FileText size={20} color={colors.text} />
               <View style={styles.uploadOptionText}>
-                <Text style={[styles.uploadOptionTitle, { color: colors.text }]}>Import from CSV</Text>
-                <Text style={[styles.uploadOptionDescription, { color: colors.inactive }]}>Upload a CSV file with your products</Text>
+                <Text style={[styles.uploadOptionTitle, { color: colors.text }]}>Import SmartStock Template CSV</Text>
+                <Text style={[styles.uploadOptionDescription, { color: colors.inactive }]}>Upload a CSV filled in from the SmartStock template</Text>
               </View>
             </TouchableOpacity>
             

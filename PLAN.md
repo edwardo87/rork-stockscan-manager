@@ -48,7 +48,16 @@ forward from later chapters and do not expand a chapter's scope while implementi
   - [x] Migration files for owner review: `chapter3-migration.sql` (additive, single transaction, idempotent; backfills stock units and price-basis units; non-unique matching indexes) and `chapter3-rollback.sql`. **NOT executed** — the owner must back up production and approve before running it; the app detects the columns at runtime and works against both the pre- and post-migration schema.
   - [x] Migration backfill corrected + deployment automated (24 Oct 2026): pack-size descriptions ("box of 12", "pack of 1000", "carton of 6") can no longer become stock units OR price-basis units — they fall back to "each" (previously the price-basis backfill could copy the raw pack string). Verified against an embedded PostgreSQL instance with the production schema shape: clean units backfill correctly, pack strings → "each", historical order items untouched, re-run idempotent. New `deploy-chapter3.ps1` (repo root) reuses the Chapter 2 Windows procedure: PostgreSQL 17 client tools, session-pooler connection, password prompted once and held only in process memory; timestamped pg_dump backup that never overwrites; backup verified via pg_restore listing; stops on any failure; checks deployment state; applies the migration only with `-Apply` AND an interactive DEPLOY confirmation; runs all integrity checks; compares before/after row counts for all 8 data tables; PASS/FAIL report. Safe by default — without `-Apply` it changes nothing.
   - [ ] Owner runs the deployment script on the Windows PC: `.\deploy-chapter3.ps1 -Apply` (backup + verification + migration + integrity checks in one command; omit `-Apply` for a no-change dry run). Then device acceptance of ordering/import/PDF flows; only then mark the chapter complete.
-- Chapter 4 — Supplier-document onboarding: not started.
+- Chapter 4 — Supplier-document onboarding: implemented at the code level (24 Oct 2026), pending device acceptance (and the Chapter 3 migration for purchasing fields to reach the database).
+  - [x] One review workflow for CSV, Excel (.xlsx/.xls, multi-sheet) and text-layer PDF price lists, linked to Chapter 2 supplier records; entry points in Products, Settings and Suppliers.
+  - [x] Header detection + editable column mapping; supplier stock-on-hand columns never mapped to the user's stock.
+  - [x] Draft review: freight, zero/POA prices, ambiguous/interpreted price bases, pack mismatches and low-confidence PDF rows flagged and not pre-selected; per-row edit; bulk basis fix; select stocked products and import without the old 12-column CSV.
+  - [x] Matching at review AND save time; duplicates/conflicts never imported; existing products never modified; chunked save with exact partial-failure reporting.
+  - [x] Scanned/encrypted/table-less PDFs explained, never guessed (no OCR).
+  - [x] Purchasing fields held on device pre-migration and flushed automatically once the columns exist.
+  - [x] Structured template CSV importer kept as fallback.
+  - [x] Automated checks: `expo/scripts/verify-catalogue-import.ts` (81 pass).
+  - [ ] Device acceptance with real supplier files; only then mark the chapter complete.
 - Chapter 5 — Complete storeroom ordering experience: not started.
 - Chapter 6 — Periodic stocktake and optional stock guidance: not started.
 - Chapter 7 — Wider beta readiness: not started.

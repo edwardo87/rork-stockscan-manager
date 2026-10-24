@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Plus, Pencil, Trash2, Truck, Building2 } from 'lucide-react-native';
+import { ArrowLeft, Plus, Pencil, Trash2, Truck, Building2, FileSpreadsheet } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useSupabaseInventoryStore } from '@/store/supabaseInventoryStore';
 import { Supplier } from '@/types/inventory';
@@ -267,6 +267,13 @@ export default function SuppliersScreen() {
                 )}
               </View>
               <View style={styles.supplierActions}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => router.push(`/catalogue-import?supplierId=${encodeURIComponent(supplier.id)}`)}
+                  accessibilityLabel={`Import ${supplier.name} catalogue`}
+                >
+                  <FileSpreadsheet size={20} color={colors.primary} />
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.actionButton} onPress={() => openEdit(supplier)}>
                   <Pencil size={20} color={colors.primary} />
                 </TouchableOpacity>

@@ -35,7 +35,90 @@ function deriveSuppliersFromProducts(products: Product[]): Supplier[] {
 import { SupabaseService } from '@/services/supabaseService';
 import { supabase, getCurrentUser, isSupabaseConfigured, signOut as signOutFromSupabase } from '@/lib/supabase';
 import { buildOrderItem } from '@/utils/purchasing';
-import { matchProductsForImport, ImportMatchOutcome } from '@/services/csvImportService';
+import {
+  matchProductsForImport,
+  matchRowsForImport,
+  ImportMatchOutcome,
+  generateProductId,
+  generateBarcode,
+} from '@/services/csvImportService';
+import {
+  PURCHASING_FIELDS,
+  PendingPurchasingMap,
+  PurchasingDetails,
+  hasPurchasing,
+  loadPendingPurchasing,
+  overlayPendingPurchasing,
+  pickPurchasing,
+  removePendingPurchasing,
+  savePendingPurchasing,
+} from '@/services/pendingPurchasingStore';
+
+/** Outcome of a supplier-catalogue import (Chapter 4). */
+export interface CatalogueImportResult {
+  /** Products actually saved. */
+  imported: Product[];
+  /** Rows skipped because the catalogue already had them at save time. */
+  skippedAsExisting: number;
+  /** Rows that could not be saved (database error). */
+  failed: number;
+  /** Saved products whose purchasing details wait on the device for the DB upgrade. */
+  purchasingHeldOnDevice: number;
+  /** Set when saving stopped part-way. */
+  error?: string;
+}
+
+const IMPORT_CHUNK = 200;
+
+/**
+ * Pending purchasing details (held while the Chapter 3 columns are absent)
+ * are overlaid onto loaded products. Once the columns exist they are written
+ * to the database and removed from the device — only after a successful write.
+ */
+async function reconcilePendingPurchasing(products: Product[]): Promise<Product[]> {
+  const pending = await loadPendingPurchasing();
+  const ids = Object.keys(pending);
+  if (ids.length === 0) return products;
+
+  const hasColumns = await SupabaseService.hasPurchasingColumns();
+  if (!hasColumns) return overlayPendingPurchasing(products, pending);
+
+  const byId = new Map(products.map(p => [p.id, p]));
+  const flushed: string[] = [];
+  const orphaned: string[] = [];
+  const updated = new Map<string, Product>();
+  for (const id of ids) {
+    const product = byId.get(id);
+    if (!product) {
+      orphaned.push(id); // product deleted — nothing to write
+      continue;
+    }
+    try {
+      const saved = await SupabaseService.updateProduct(id, pending[id] as Partial<Product>);
+      updated.set(id, saved);
+      flushed.push(id);
+    } catch (err) {
+      console.error('Pending purchasing flush failed; kept on device:', err);
+    }
+  }
+  await removePendingPurchasing([...flushed, ...orphaned]);
+  const remaining: PendingPurchasingMap = {};
+  ids.filter(id => !flushed.includes(id) && !orphaned.includes(id)).forEach(id => { remaining[id] = pending[id]; });
+  return overlayPendingPurchasing(products.map(p => updated.get(p.id) ?? p), remaining);
+}
+
+/** Purchasing values explicitly present in an update (including cleared ''). */
+function purchasingInUpdate(updates: Partial<Product>): PurchasingDetails | null {
+  const out: PurchasingDetails = {};
+  let any = false;
+  for (const f of PURCHASING_FIELDS) {
+    if (updates[f] !== undefined) {
+      (out as Record<string, unknown>)[f] = updates[f];
+      any = true;
+    }
+  }
+  return any ? out : null;
+}
 
 /**
  * Detects Supabase JWT clock-skew errors (PGRST303 "JWT issued at future").
@@ -94,6 +177,7 @@ interface SupabaseInventoryState {
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (productId: string, updatedProduct: Partial<Product>) => Promise<void>;
   importProductsFromCSV: (products: Product[]) => Promise<ImportMatchOutcome>;
+  importCatalogueProducts: (products: Product[]) => Promise<CatalogueImportResult>;
   getProductByBarcode: (barcode: string) => Product | undefined;
   updateProductStock: (productId: string, newStock: number) => Promise<void>;
   
@@ -342,7 +426,13 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         
         set({ isLoading: true, error: null });
         try {
-          const products = await SupabaseService.getProducts();
+          const loaded = await SupabaseService.getProducts();
+          let products = loaded;
+          try {
+            products = await reconcilePendingPurchasing(loaded);
+          } catch (err) {
+            console.error('Pending purchasing reconcile failed:', err);
+          }
           set({
             products,
             suppliers: deriveSuppliersFromProducts(products),
@@ -373,7 +463,14 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
               ...product,
               supplierId: findSupplierRecord(state.supplierRecords, product.supplier)?.id,
             };
-            const createdProduct = await SupabaseService.createProduct(withLink);
+            const created = await SupabaseService.createProduct(withLink);
+            // Hold purchasing details on device until the DB has the columns.
+            let createdProduct = created;
+            if (hasPurchasing(product) && !(await SupabaseService.hasPurchasingColumns())) {
+              const details = pickPurchasing(product);
+              await savePendingPurchasing({ [created.id]: details });
+              createdProduct = overlayPendingPurchasing([created], { [created.id]: details })[0];
+            }
             set((state) => {
               const next = [...state.products, createdProduct];
               return {
@@ -415,7 +512,19 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
                 ? { supplierId: findSupplierRecord(state.supplierRecords, updatedProduct.supplier)?.id ?? null }
                 : {}),
             };
-            const updated = await SupabaseService.updateProduct(productId, updatesWithLink);
+            const saved = await SupabaseService.updateProduct(productId, updatesWithLink);
+            let updated = saved;
+            const purchasing = purchasingInUpdate(updatedProduct);
+            if (purchasing && !(await SupabaseService.hasPurchasingColumns())) {
+              await savePendingPurchasing({ [productId]: purchasing });
+              const pending = await loadPendingPurchasing();
+              // Cleared fields must not reappear from the stale product copy.
+              const base: Product = { ...saved };
+              for (const f of PURCHASING_FIELDS) {
+                if (purchasing[f] === '') (base as unknown as Record<string, unknown>)[f] = undefined;
+              }
+              updated = overlayPendingPurchasing([base], pending)[0];
+            }
             set((state) => {
               const next = state.products.map(product =>
                 product.id === productId ? updated : product
@@ -490,6 +599,82 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         return outcome;
       },
       
+      // Chapter 4: supplier-catalogue import. Rows were reviewed by the user;
+      // they are re-matched against the CURRENT catalogue so nothing that
+      // appeared meanwhile is duplicated or overwritten. Existing products are
+      // never modified. Saves in chunks and stops on the first failure,
+      // reporting exactly what was and was not saved.
+      importCatalogueProducts: async (incoming) => {
+        const state = get();
+        const matches = matchRowsForImport(state.products, incoming);
+        const usedBarcodes = new Set(state.products.map(p => p.barcode).filter(Boolean));
+        let skippedAsExisting = 0;
+        const toAdd: Product[] = [];
+        incoming.forEach((p, i) => {
+          if (matches[i].status !== 'new') {
+            skippedAsExisting += 1;
+            return;
+          }
+          let barcode = (p.barcode || '').trim();
+          if (!barcode || usedBarcodes.has(barcode)) {
+            do {
+              barcode = generateBarcode();
+            } while (usedBarcodes.has(barcode));
+          }
+          usedBarcodes.add(barcode);
+          toAdd.push({
+            ...p,
+            id: generateProductId(i, barcode),
+            barcode,
+            supplierId: p.supplierId || findSupplierRecord(state.supplierRecords, p.supplier)?.id,
+          });
+        });
+
+        const result: CatalogueImportResult = {
+          imported: [],
+          skippedAsExisting,
+          failed: 0,
+          purchasingHeldOnDevice: 0,
+        };
+        if (toAdd.length === 0) return result;
+
+        if (!(state.isSupabaseEnabled && state.isAuthenticated)) {
+          const next = [...state.products, ...toAdd];
+          set({
+            products: next,
+            suppliers: deriveSuppliersFromProducts(next),
+            lastSyncTime: new Date().toISOString(),
+          });
+          result.imported = toAdd;
+          return result;
+        }
+
+        set({ isLoading: true, error: null });
+        const holdPurchasing = !(await SupabaseService.hasPurchasingColumns());
+        for (let start = 0; start < toAdd.length; start += IMPORT_CHUNK) {
+          const chunk = toAdd.slice(start, start + IMPORT_CHUNK);
+          try {
+            await SupabaseService.bulkCreateProducts(chunk);
+            result.imported.push(...chunk);
+            if (holdPurchasing) {
+              const pending: PendingPurchasingMap = {};
+              chunk.forEach(p => {
+                if (hasPurchasing(p)) pending[p.id] = pickPurchasing(p);
+              });
+              await savePendingPurchasing(pending);
+              result.purchasingHeldOnDevice += Object.keys(pending).length;
+            }
+          } catch (error) {
+            result.failed = toAdd.length - start;
+            result.error = error instanceof Error ? error.message : 'Failed to save products';
+            break;
+          }
+        }
+        set({ isLoading: false });
+        await get().loadProducts();
+        return result;
+      },
+
       getProductByBarcode: (barcode) => {
         return get().products.find(p => p.barcode === barcode);
       },

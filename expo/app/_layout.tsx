@@ -192,6 +192,13 @@ function RootLayoutNav() {
             presentation: "card",
           }} 
         />
+        <Stack.Screen
+          name="catalogue-import"
+          options={{
+            title: "Import Catalogue",
+            presentation: "card",
+          }}
+        />
         <Stack.Screen 
           name="coming-soon" 
           options={{ 

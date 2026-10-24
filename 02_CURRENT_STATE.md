@@ -40,9 +40,9 @@ Status date: 5 September 2026
 
 - Business profile and business-neutral PO identity.
 - First-class supplier records and supplier maintenance.
-- Upload and extraction of PDF, quotation or Excel supplier information.
-- Draft product review, selection and correction before import.
-- Import matching, deduplication and price-update handling.
+- ~~Upload and extraction of PDF, quotation or Excel supplier information.~~ Built at the code level 24 Oct 2026 (Chapter 4) — see below. Scanned/image-only PDFs are not supported (no OCR, by design).
+- ~~Draft product review, selection and correction before import.~~ Built at the code level 24 Oct 2026 (Chapter 4).
+- Import price-update handling for EXISTING products (re-imports report changed prices as conflicts; nothing is overwritten, but there is no "apply new prices" action yet).
 - Separate stock unit, order unit, pack quantity and price basis.
 - User-facing searchable order history.
 - Scan-time recent order information.
@@ -109,6 +109,18 @@ Local physical-device verification has partially completed: existing-account aut
 - Business scoping relies on the production RLS/ownership triggers; `business_id` is never written by the app on inserts.
 
 **Outstanding:** Stage 6 device acceptance (cloud-preview account binding still unresolved; local clone testing can proceed). Chapter 2 cannot be marked complete until then.
+
+## Chapter 4 supplier-catalogue onboarding (24 October 2026)
+
+**Code complete, runChecks passed, 81 automated checks pass (`expo/scripts/verify-catalogue-import.ts`); not yet device-verified.**
+
+- Entry points: Products → Upload Stock → Import Supplier Catalogue; Settings → Import Supplier Catalogue; Suppliers → per-supplier import icon (pre-selects the supplier).
+- Flow: choose supplier record (or "supplier is a column in my file") → pick CSV / Excel (.xlsx/.xls, any sheet) / PDF → header row detected, columns auto-mapped and editable → review list with Ready / Already in catalogue / Conflict / Needs review / Can't import filters, per-row edit with live re-validation, bulk per-item vs per-pack fix → confirm → result.
+- Flags, never silently imported: freight/delivery lines, zero/negative/POA/unreadable prices, ambiguous price bases (e.g. "M", price + pack with no basis), interpreted bases ("C" = per 100), pack mismatches, missing names, code-like names, low-confidence PDF rows. Supplier stock-on-hand columns are never mapped to the user's stock.
+- Only "Ready" rows are pre-selected; review rows need explicit inclusion; duplicates and conflicts can never be imported; existing products are never modified. Rows are re-matched against the live catalogue at save time; saving is chunked and stops on failure with an exact saved/not-saved report.
+- PDF: deterministic text-layer extraction only. Encrypted, scanned or table-less PDFs show an explained limitation and suggest Excel/CSV.
+- Pre-migration: purchasing details (supplier code, units, pack, price, basis) are held on the device and used for ordering, then written to the database automatically on first load after `chapter3-migration.sql` runs. Held data is device-local until then (another phone will not see it).
+- The structured SmartStock template CSV importer remains available as a fallback.
 
 ## Immediate position
 

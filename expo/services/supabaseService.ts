@@ -140,6 +140,14 @@ export class SupabaseService {
     return isSupabaseConfigured() && supabase !== null;
   }
 
+  /**
+   * True once chapter3-migration.sql has run (purchasing columns exist).
+   * Until then purchasing details are held on the device, never dropped.
+   */
+  static hasPurchasingColumns(): Promise<boolean> {
+    return hasChapter3Columns();
+  }
+
   // Products
   static async getProducts(): Promise<Product[]> {
     if (!this.isAvailable()) {

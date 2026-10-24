@@ -919,6 +919,13 @@ export class SupabaseService {
       .single();
 
     if (error) {
+      // suppliers_business_name_uq (business, case/trim-insensitive name):
+      // a retry after an earlier save that did complete can never duplicate.
+      if (error.code === '23505') {
+        throw new Error(
+          `A supplier named "${supplier.name.trim()}" already exists in your list.`,
+        );
+      }
       console.error('Error creating supplier:', JSON.stringify(error, null, 2));
       throw new Error(`Failed to create supplier: ${error.message || 'Unknown database error'}`);
     }

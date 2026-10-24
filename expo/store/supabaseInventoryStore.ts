@@ -394,6 +394,9 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           await SupabaseService.linkProductsToSupplierRecord(saved.name, saved.id);
         } catch (error) {
           set({ supplierRecordsLoading: false });
+          // Refresh from the database so a record saved by an earlier
+          // attempt (e.g. duplicate-name rejection on retry) shows in the list.
+          void get().loadSupplierRecords();
           throw error;
         }
       },
@@ -976,20 +979,35 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
           return null;
         }
         
-        // Set up auth state listener. Loads run sequentially and awaited so a
-        // brand-new session is fully established before the first queries —
-        // an unawaited parallel load could race the session and throw
-        // 'User not authenticated' (observed on new-account sign-up, Oct 2026).
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        // Set up auth state listener.
+        //
+        // The callback must NEVER await Supabase calls: supabase-js awaits
+        // this callback and emits SIGNED_IN from session recovery (e.g. tab
+        // refocus) while HOLDING its auth lock. Awaiting a query here makes it
+        // wait on getSession(), which queues behind that same lock — a
+        // permanent deadlock in which every later request hangs (the "Add
+        // Supplier spins forever" defect, 24 Oct 2026; reproduced by
+        // scripts/verify-auth-deadlock.ts). The loads are therefore deferred
+        // to run after the callback returns, still sequentially (in order) so
+        // a brand-new session is established before the first queries.
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
           const user = session?.user || null;
           set({ user, isAuthenticated: !!user });
           
           if (event === 'SIGNED_IN' && user) {
-            await get().loadProducts();
-            await get().loadPurchaseOrders();
-            // Chapter 2: profile + supplier records, awaited in order.
-            await get().loadBusiness();
-            await get().loadSupplierRecords();
+            setTimeout(() => {
+              void (async () => {
+                try {
+                  await get().loadProducts();
+                  await get().loadPurchaseOrders();
+                  // Chapter 2: profile + supplier records, in order.
+                  await get().loadBusiness();
+                  await get().loadSupplierRecords();
+                } catch (error) {
+                  console.error('Error loading data after sign-in:', error);
+                }
+              })();
+            }, 0);
           } else if (event === 'SIGNED_OUT') {
             clearBusinessProfileCache();
             set({ 

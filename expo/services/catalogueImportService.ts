@@ -13,6 +13,7 @@
  */
 import * as XLSX from 'xlsx';
 import { Product } from '@/types/inventory';
+import { resolvePricing } from '@/utils/purchasing';
 import {
   parseCSVLine,
   generateSKU,
@@ -1112,6 +1113,7 @@ export type IssueCode =
   | 'price-inc-gst'
   | 'gst-check'
   | 'pack-hint'
+  | 'pack-question'
   | 'pack-unclear'
   | 'pack-mismatch'
   | 'unit-mismatch'
@@ -1166,6 +1168,26 @@ export interface CatalogueDraft {
   reference: DraftReference;
   /** True when the user edited this row. */
   edited?: boolean;
+  /** A genuine ambiguity the user should answer (grouped for bulk answers). */
+  clarification?: PackClarification;
+}
+
+/**
+ * Quote line whose quoted quantity looks like a pack the supplier sells
+ * (e.g. 1,000 screws at $0.0177 each): is the item bought singly, or only in
+ * packs of that quantity? Never guessed — asked, and grouped so one answer
+ * can cover many similar lines.
+ */
+export interface PackClarification {
+  kind: 'pack-from-quote';
+  /** The quoted quantity that may be the pack size. */
+  quantity: number;
+  /** Rows with the same key are asked together. */
+  groupKey: string;
+  /** Price per stock unit as printed. */
+  unitPrice: number;
+  /** Stock unit the price refers to. */
+  unit: string;
 }
 
 /** Clear non-product charges: blocked from import. */
@@ -1465,6 +1487,31 @@ export function buildDraft(
     priceBasisUnit,
   };
 
+  // ---- Pack question: a quoted quantity that genuinely looks like a pack.
+  // Asked only when the document says nothing about packs or order units and
+  // the numbers carry a real pack signal (round quantity of low-cost items,
+  // or sub-cent pricing that is only meaningful in bulk). Never applied
+  // automatically — the user answers (in bulk or per row).
+  let clarification: PackClarification | undefined;
+  const q = reference.quotedQuantity;
+  const basisUnitForQ = priceBasisUnit ?? 'each';
+  if (
+    purchasePrice !== undefined && q !== undefined && Number.isInteger(q) && q > 1
+    && !orderUnit && unitsPerOrderUnit === undefined && !hint && !v('stockUnit')
+    && basisQty === 1 && basisUnitForQ === 'each'
+  ) {
+    const subCent = Math.abs(purchasePrice * 100 - Math.round(purchasePrice * 100)) > 1e-6;
+    const packSignal = (q >= 50 && q % 50 === 0 && purchasePrice < 1) || (subCent && q >= 10 && q % 10 === 0);
+    if (packSignal) {
+      clarification = { kind: 'pack-from-quote', quantity: q, groupKey: `${q}|${basisUnitForQ}`, unitPrice: purchasePrice, unit: basisUnitForQ };
+      issues.push({
+        level: 'review',
+        code: 'pack-question',
+        message: `Quoted ${fmtQty(q)} at ${fmtMoney(purchasePrice)} each — is this sold in packs of ${fmtQty(q)}, or ordered individually?`,
+      });
+    }
+  }
+
   const status: DraftStatus = issues.some(i => i.level === 'error')
     ? 'invalid'
     : issues.some(i => i.level === 'review')
@@ -1481,7 +1528,133 @@ export function buildDraft(
     includeByDefault: status === 'ready',
     lowConfidence: !!ctx.lowConfidence,
     reference,
+    ...(clarification ? { clarification } : {}),
   };
+}
+
+// ============================================================================
+// Clarifications (pack questions) — pure helpers used by the review screen
+// ============================================================================
+
+export type PackAnswer = 'pack' | 'individual';
+
+/**
+ * Field values for a row after answering its pack question. The price is
+ * kept exactly as printed (per each); only the order unit and pack quantity
+ * are recorded, so the purchasing maths stays transparent:
+ *   pack       → "pack of 1,000", 1,000 per pack  (3 packs = 3,000 each)
+ *   individual → ordered one at a time, 1 per order unit
+ */
+export function answerPackQuestion(
+  values: Partial<Record<TargetField, string>>,
+  clarification: PackClarification,
+  answer: PackAnswer,
+): Partial<Record<TargetField, string>> {
+  const next = { ...values };
+  if (answer === 'pack') {
+    next.orderUnit = `pack of ${clarification.quantity.toLocaleString('en-AU')}`;
+    next.unitsPerOrderUnit = String(clarification.quantity);
+    if (!(next.priceBasisQuantity || '').trim()) next.priceBasisQuantity = '1';
+  } else {
+    next.orderUnit = (values.stockUnit || '').trim() || clarification.unit || 'each';
+    next.unitsPerOrderUnit = '1';
+  }
+  return next;
+}
+
+export interface ClarificationGroup {
+  groupKey: string;
+  quantity: number;
+  unit: string;
+  /** Row keys in this group, in document order. */
+  keys: string[];
+}
+
+/** Open pack questions grouped by quoted quantity, for bulk answers with per-row exceptions. */
+export function clarificationGroups(rows: CatalogueDraft[]): ClarificationGroup[] {
+  const groups = new Map<string, ClarificationGroup>();
+  for (const r of rows) {
+    const c = r.clarification;
+    if (!c) continue;
+    const g = groups.get(c.groupKey) ?? { groupKey: c.groupKey, quantity: c.quantity, unit: c.unit, keys: [] };
+    g.keys.push(r.key);
+    groups.set(c.groupKey, g);
+  }
+  return [...groups.values()].sort((a, b) => b.keys.length - a.keys.length || b.quantity - a.quantity);
+}
+
+/** Applies one answer to many rows (bulk), returning the new overrides. */
+export function applyPackAnswers(
+  overrides: DraftOverrides,
+  rows: CatalogueDraft[],
+  keys: string[],
+  answer: PackAnswer,
+): DraftOverrides {
+  const want = new Set(keys);
+  const next = { ...overrides };
+  for (const r of rows) {
+    if (!want.has(r.key) || !r.clarification) continue;
+    next[r.key] = answerPackQuestion(r.values, r.clarification, answer);
+  }
+  return next;
+}
+
+/** Purchasing fields that a confirmed update may change on an existing product. */
+export type PurchasingUpdate = Pick<Product, 'orderUnit' | 'unitsPerOrderUnit' | 'purchasePrice' | 'priceBasisQuantity' | 'priceBasisUnit' | 'supplierCode' | 'cost'>;
+
+export interface PurchasingChange {
+  field: string;
+  before: string;
+  after: string;
+}
+
+/**
+ * Purchasing-only update for a conflict row that is the same product and
+ * differs only in purchasing details. Returns null when the row is not
+ * eligible. Never includes name, barcode, SKU, category, stock, sell price or
+ * supplier — and order history snapshots are never touched.
+ */
+export function purchasingUpdateFor(row: ReviewedDraft): { productId: string; updates: Partial<PurchasingUpdate>; changes: PurchasingChange[] } | null {
+  const existing = row.match.match;
+  if (row.category !== 'conflict' || !row.match.purchasingOnly || !existing || row.status === 'invalid') return null;
+  const p = row.product;
+  const updates: Partial<PurchasingUpdate> = {};
+  const changes: PurchasingChange[] = [];
+  const show = (n: number | string | undefined) => (n === undefined || n === '' ? 'none' : String(n));
+  const textDiff = (a?: string, b?: string) => (a || '').trim().toLowerCase() !== (b || '').trim().toLowerCase();
+  const numDiff = (a?: number, b?: number) => a !== undefined && (b === undefined || Math.abs(a - b) > 1e-9);
+  if (p.orderUnit && textDiff(p.orderUnit, existing.orderUnit)) {
+    updates.orderUnit = p.orderUnit;
+    changes.push({ field: 'Order unit', before: show(existing.orderUnit), after: p.orderUnit });
+  }
+  if (numDiff(p.unitsPerOrderUnit, existing.unitsPerOrderUnit)) {
+    updates.unitsPerOrderUnit = p.unitsPerOrderUnit;
+    changes.push({ field: 'Pack quantity', before: show(existing.unitsPerOrderUnit), after: show(p.unitsPerOrderUnit) });
+  }
+  if (numDiff(p.purchasePrice, existing.purchasePrice)) {
+    updates.purchasePrice = p.purchasePrice;
+    changes.push({ field: 'Purchase price (ex GST)', before: existing.purchasePrice !== undefined ? fmtMoney(existing.purchasePrice) : 'none', after: fmtMoney(p.purchasePrice as number) });
+  }
+  if (numDiff(p.priceBasisQuantity, existing.priceBasisQuantity)) {
+    updates.priceBasisQuantity = p.priceBasisQuantity;
+    changes.push({ field: 'Price per (quantity)', before: show(existing.priceBasisQuantity), after: show(p.priceBasisQuantity) });
+  }
+  if (p.priceBasisUnit && textDiff(p.priceBasisUnit, existing.priceBasisUnit)) {
+    updates.priceBasisUnit = p.priceBasisUnit;
+    changes.push({ field: 'Price per (unit)', before: show(existing.priceBasisUnit), after: p.priceBasisUnit });
+  }
+  if (p.supplierCode && !(existing.supplierCode || '').trim()) {
+    updates.supplierCode = p.supplierCode;
+    changes.push({ field: 'Supplier code', before: 'none', after: p.supplierCode });
+  }
+  if (changes.length === 0) return null;
+  // Keep the legacy per-stock-unit cost consistent with the new pricing.
+  const merged = { ...existing, ...updates };
+  const resolved = resolvePricing(merged);
+  if (merged.purchasePrice !== undefined && resolved.ok && resolved.basisInStockUnits > 0) {
+    updates.cost = round6(merged.purchasePrice / resolved.basisInStockUnits);
+  }
+  return { productId: existing.id, updates, changes };
 }
 
 /** Row edits kept separately from the file so mapping changes never lose them. */
@@ -1551,8 +1724,15 @@ export function reviewDrafts(existing: Product[], drafts: CatalogueDraft[]): Rev
   const matches = matchRowsForImport(existing, valid.map(d => d.product));
   const byKey = new Map<string, RowMatch>();
   valid.forEach((d, i) => byKey.set(d.key, matches[i]));
-  return drafts.map(d => {
-    const match: RowMatch = byKey.get(d.key) ?? { status: 'new', reason: '' };
+  return drafts.map(raw => {
+    const match: RowMatch = byKey.get(raw.key) ?? { status: 'new', reason: '' };
+    let d = raw;
+    // The catalogue already knows how this product is ordered: don't ask again.
+    if (d.clarification && (match.match?.orderUnit || '').trim()) {
+      const issues = d.issues.filter(i => i.code !== 'pack-question');
+      const status: DraftStatus = issues.some(i => i.level === 'error') ? 'invalid' : issues.some(i => i.level === 'review') ? 'review' : 'ready';
+      d = { ...d, issues, status, includeByDefault: status === 'ready', clarification: undefined };
+    }
     let category: ReviewCategory;
     if (d.status === 'invalid') category = 'invalid';
     else if (match.status === 'duplicate') category = 'existing';

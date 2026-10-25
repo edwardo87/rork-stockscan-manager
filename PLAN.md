@@ -66,6 +66,13 @@ forward from later chapters and do not expand a chapter's scope while implementi
     - Review: checkbox + bin per row (session-only, restorable), Select all ready / Select all remaining / Deselect all, a Removed view, and full counts.
     - The completion summary counts every product exactly once (fixes "98 added + 152 left out").
   - [x] Automated checks: `expo/scripts/verify-catalogue-import.ts` (171 pass, including 6 real supplier documents in `expo/scripts/fixtures/suppliers/`).
+  - [x] Pricing & purchasing correction (25 Oct 2026, after KJ test import showed 3 × "6G X 1/2 STS PAN" = $0.05):
+    - Pricing guard: a container order unit with an unknown pack quantity, or a price unit that can't be converted to the stock unit, is flagged as unresolved — never a misleading total. Unresolved lines block PO sending (order tab banner + store hard-block, re-snapshotted from the current product at send time); a missing price stays allowed (no total, never $0).
+    - Pack questions: quote lines whose quoted quantity looks like a supplier pack (e.g. 1,000 at $0.0177 each) are asked, not guessed, grouped by quantity for one-tap bulk answers with per-item exceptions. Answers fill order unit + pack quantity; the printed price is kept.
+    - Existing products: when the answer shows only purchasing details differ (same supplier/product), "Update purchasing details" shows before → after and updates only order unit, pack quantity and cost — no deletion or re-import; identity, stock, sell price and PO snapshots untouched.
+    - Row Info button opens a details sheet (extracted values, interpretation, pricing check, quote details, checks, edit, pack answer); rows show a "Tap to edit" cue.
+    - Product cards show supplier cost ex GST with its pricing unit (sell price separate); product detail has a full Purchasing section.
+    - Tests: `verify-chapter3.ts` 64 pass; `verify-catalogue-import.ts` 198 pass (KJ regression: pack of 1,000 at $17.70 → 3 packs = $53.10).
   - [ ] Device acceptance with real supplier files; only then mark the chapter complete.
 - Chapter 5 — Complete storeroom ordering experience: not started.
 - Chapter 6 — Periodic stocktake and optional stock guidance: not started.

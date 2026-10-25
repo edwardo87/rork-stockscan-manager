@@ -47,6 +47,10 @@ import {
   buildDraft,
   buildDrafts,
   buildImportAccounting,
+  applyPackAnswers,
+  clarificationGroups,
+  PackAnswer,
+  purchasingUpdateFor,
   CatalogueSource,
   ColumnMapping,
   columnHints,
@@ -81,7 +85,7 @@ import {
   toggleSelected,
   withDefaultSelection,
 } from '@/services/catalogueImportService';
-import { formatUnitPrice, unitPriceLabel } from '@/utils/purchasing';
+import { formatUnitPrice, purchasingCostLabel, purchasingProblem, unitPriceLabel } from '@/utils/purchasing';
 
 type Step = 'supplier' | 'file' | 'columns' | 'review' | 'done';
 const STEPS: { key: Step; label: string }[] = [
@@ -156,6 +160,7 @@ export default function CatalogueImportScreen() {
     loadBusiness,
     loadSupplierRecords,
     importCatalogueProducts,
+    updateProduct,
   } = useSupabaseInventoryStore();
 
   const [step, setStep] = useState<Step>(params.supplierId ? 'file' : 'supplier');
@@ -424,6 +429,84 @@ export default function CatalogueImportScreen() {
       ),
     [reviewed, selection],
   );
+
+  // ---- pack questions & purchasing-only updates ----------------------------
+  const [detailsKey, setDetailsKey] = useState<string | null>(null);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [updatingPurchasing, setUpdatingPurchasing] = useState(false);
+  const detailsRow = useMemo(
+    () => (detailsKey ? reviewed.find(r => r.key === detailsKey) ?? null : null),
+    [detailsKey, reviewed],
+  );
+  const packGroups = useMemo(
+    () => clarificationGroups(reviewed.filter(r => !selection.excluded.has(r.key))),
+    [reviewed, selection],
+  );
+  const purchasingUpdates = useMemo(
+    () =>
+      reviewed
+        .filter(r => !selection.excluded.has(r.key))
+        .map(r => ({ row: r, update: purchasingUpdateFor(r) }))
+        .filter((x): x is { row: ReviewedDraft; update: NonNullable<ReturnType<typeof purchasingUpdateFor>> } => x.update !== null),
+    [reviewed, selection],
+  );
+
+  /** Answers pack questions (bulk or single) and ticks rows that become ready. */
+  const answerPack = (keys: string[], answer: PackAnswer) => {
+    if (keys.length === 0) return;
+    tap();
+    const next = applyPackAnswers(overrides, reviewed, keys, answer);
+    setOverrides(next);
+    const after = buildReviewed(next);
+    const want = new Set(keys);
+    setSelection(prev => {
+      const selected = new Set(prev.selected);
+      after.forEach(r => {
+        if (want.has(r.key) && r.importable && r.status === 'ready' && !prev.excluded.has(r.key)) selected.add(r.key);
+      });
+      return { selected, excluded: prev.excluded };
+    });
+  };
+
+  const applyPurchasingUpdates = (items: typeof purchasingUpdates) => {
+    if (items.length === 0) return;
+    const preview = items
+      .slice(0, 4)
+      .map(({ row, update }) => `${row.match.match?.name ?? row.product.name}\n${update.changes.map(c => `  ${c.field}: ${c.before} → ${c.after}`).join('\n')}`)
+      .join('\n\n');
+    const more = items.length > 4 ? `\n\n…and ${items.length - 4} more.` : '';
+    Alert.alert(
+      items.length === 1 ? 'Update purchasing details?' : `Update ${items.length} existing products?`,
+      `${preview}${more}\n\nOnly purchasing details change. Names, codes, stock, sell price and past orders stay exactly as they are.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Update',
+          onPress: async () => {
+            setUpdatingPurchasing(true);
+            let done = 0;
+            const failed: string[] = [];
+            for (const { row, update } of items) {
+              try {
+                await updateProduct(update.productId, update.updates);
+                done += 1;
+              } catch {
+                failed.push(row.match.match?.name ?? row.product.name);
+              }
+            }
+            setUpdatingPurchasing(false);
+            if (Platform.OS !== 'web') Haptics.notificationAsync(failed.length ? Haptics.NotificationFeedbackType.Warning : Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+            Alert.alert(
+              failed.length ? 'Some updates failed' : 'Purchasing details updated',
+              failed.length
+                ? `${done} updated. Not updated: ${failed.join(', ')}. Nothing else was changed — you can try again.`
+                : `${done} product${done === 1 ? '' : 's'} updated. Stock and past orders were not changed.`,
+            );
+          },
+        },
+      ],
+    );
+  };
 
   const toggleRow = (row: ReviewedDraft) => {
     if (!row.importable || selection.excluded.has(row.key)) return;
@@ -968,19 +1051,33 @@ export default function CatalogueImportScreen() {
             </View>
             {item.edited && <Text style={[styles.rowNum, { color: colors.primary }]}>Edited</Text>}
             <Text style={[styles.rowNum, { color: colors.inactive }]}>Row {item.rowNumber}</Text>
+            <View style={styles.flex1} />
+            <Text style={[styles.rowNum, { color: colors.primary, fontWeight: '600' }]}>Tap to edit</Text>
+            <ChevronRight size={14} color={colors.primary} />
           </View>
           {!!issueText && !excluded && (
             <Text style={[styles.rowIssue, { color: colors.text }]} numberOfLines={2}>{issueText}</Text>
           )}
         </View>
-        <Pressable
-          onPress={() => (excluded ? restoreRow(item) : excludeRow(item))}
-          hitSlop={10}
-          style={({ pressed }) => [styles.binBtn, { backgroundColor: pressed ? tint(excluded ? colors.primary : colors.error, 0.12) : 'transparent' }]}
-          accessibilityLabel={excluded ? 'Restore row' : 'Remove row from this import'}
-        >
-          {excluded ? <RotateCcw size={18} color={colors.primary} /> : <Trash2 size={18} color={colors.inactive} />}
-        </Pressable>
+        <View style={styles.rowActions}>
+          <Pressable
+            onPress={() => (excluded ? restoreRow(item) : excludeRow(item))}
+            hitSlop={8}
+            style={({ pressed }) => [styles.binBtn, { backgroundColor: pressed ? tint(excluded ? colors.primary : colors.error, 0.12) : 'transparent' }]}
+            accessibilityLabel={excluded ? 'Restore row' : 'Remove row from this import'}
+          >
+            {excluded ? <RotateCcw size={18} color={colors.primary} /> : <Trash2 size={18} color={colors.inactive} />}
+          </Pressable>
+          <Pressable
+            onPress={() => { tap(); setDetailsKey(item.key); }}
+            hitSlop={8}
+            testID={`import-row-info-${item.rowNumber}`}
+            style={({ pressed }) => [styles.binBtn, { backgroundColor: pressed ? tint(colors.primary, 0.12) : 'transparent' }]}
+            accessibilityLabel="Show what was read from this row"
+          >
+            <Info size={18} color={item.clarification ? colors.warning : colors.primary} />
+          </Pressable>
+        </View>
       </Pressable>
     );
   };
@@ -1032,6 +1129,73 @@ export default function CatalogueImportScreen() {
           <Banner tone="info" title="Purchasing details saved on this device for now">
             Supplier codes, order units, pack quantities and price bases are kept on this phone until your database upgrade (Chapter 3) is installed, then saved to your account automatically. Names, categories, suppliers and costs save to your account now.
           </Banner>
+        )}
+
+        {packGroups.map(g => {
+          const rows = g.keys.map(k => reviewed.find(r => r.key === k)).filter((r): r is ReviewedDraft => !!r);
+          const qty = g.quantity.toLocaleString('en-AU');
+          const sample = rows[0];
+          const open = expandedGroup === g.groupKey;
+          return (
+            <View key={g.groupKey} testID={`pack-question-${g.quantity}`} style={[styles.questionCard, { backgroundColor: surface, borderColor: tint(colors.warning, 0.5) }]}>
+              <Text style={[styles.choiceTitle, { color: colors.text }]}>Sold in packs of {qty}?</Text>
+              <Text style={[styles.choiceSub, { color: colors.inactive, marginBottom: 12 }]}>
+                {rows.length} item{rows.length === 1 ? ' was' : 's were'} quoted at {qty} with a low price per {g.unit || 'each'}
+                {sample?.product.purchasePrice !== undefined ? ` (e.g. ${sample.product.name} at ${formatUnitPrice(sample.product.purchasePrice)})` : ''}.
+                {' '}Prices stay as quoted — your answer only sets how they’re ordered.
+              </Text>
+              <View style={styles.twoBtns}>
+                <Pressable testID={`pack-answer-pack-${g.quantity}`} onPress={() => answerPack(g.keys, 'pack')} style={({ pressed }) => [styles.outlineBtn, { borderColor: colors.primary, backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
+                  <Text style={[styles.outlineBtnText, { color: '#FFFFFF' }]}>Packs of {qty}</Text>
+                </Pressable>
+                <Pressable onPress={() => answerPack(g.keys, 'individual')} style={({ pressed }) => [styles.outlineBtn, { borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
+                  <Text style={[styles.outlineBtnText, { color: colors.primary }]}>Individually</Text>
+                </Pressable>
+              </View>
+              {rows.length > 1 && (
+                <Pressable onPress={() => { tap(); setExpandedGroup(open ? null : g.groupKey); }} hitSlop={6} style={styles.groupToggle}>
+                  <Text style={[styles.linkText, { color: colors.primary }]}>{open ? 'Hide items' : `Answer item by item (${rows.length})`}</Text>
+                  {open ? <ChevronDown size={16} color={colors.primary} /> : <ChevronRight size={16} color={colors.primary} />}
+                </Pressable>
+              )}
+              {open && rows.map(r => (
+                <View key={r.key} style={[styles.groupItem, { borderTopColor: colors.border }]}>
+                  <View style={styles.flex1}>
+                    <Text style={[styles.groupItemName, { color: colors.text }]} numberOfLines={1}>{r.product.name}</Text>
+                    <Text style={[styles.rowNum, { color: colors.inactive }]} numberOfLines={1}>
+                      {[r.product.supplierCode, r.product.purchasePrice !== undefined ? unitPriceLabel(r.product) : null].filter(Boolean).join('  ·  ')}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => answerPack([r.key], 'pack')} hitSlop={4} style={[styles.miniBtn, { borderColor: colors.primary }]}>
+                    <Text style={[styles.miniBtnText, { color: colors.primary }]}>Pack</Text>
+                  </Pressable>
+                  <Pressable onPress={() => answerPack([r.key], 'individual')} hitSlop={4} style={[styles.miniBtn, { borderColor: colors.border }]}>
+                    <Text style={[styles.miniBtnText, { color: colors.text }]}>Each</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          );
+        })}
+
+        {purchasingUpdates.length > 0 && (
+          <View testID="purchasing-updates-card" style={[styles.questionCard, { backgroundColor: surface, borderColor: tint(colors.primary, 0.45) }]}>
+            <Text style={[styles.choiceTitle, { color: colors.text }]}>
+              {purchasingUpdates.length} existing product{purchasingUpdates.length === 1 ? '' : 's'} can get corrected purchasing details
+            </Text>
+            <Text style={[styles.choiceSub, { color: colors.inactive, marginBottom: 12 }]}>
+              Same supplier and product — only the order unit, pack quantity or cost differ. No deleting or re-importing needed; stock and past orders are not touched.
+            </Text>
+            <Pressable
+              disabled={updatingPurchasing}
+              onPress={() => applyPurchasingUpdates(purchasingUpdates)}
+              style={({ pressed }) => [styles.outlineBtn, { flex: 0, borderColor: colors.primary, opacity: pressed || updatingPurchasing ? 0.6 : 1 }]}
+            >
+              {updatingPurchasing ? <ActivityIndicator color={colors.primary} /> : (
+                <Text style={[styles.outlineBtnText, { color: colors.primary }]}>Review & update purchasing details</Text>
+              )}
+            </Pressable>
+          </View>
         )}
 
         {basisQuestionRows.length > 0 && (
@@ -1275,6 +1439,132 @@ export default function CatalogueImportScreen() {
     );
   };
 
+  const renderDetailsModal = () => {
+    const row = detailsRow;
+    if (!row) return null;
+    const p = row.product;
+    const close = () => setDetailsKey(null);
+    const editFromDetails = () => {
+      close();
+      setTimeout(() => openEdit(row), Platform.OS === 'ios' ? 400 : 0);
+    };
+    const raw = (Object.keys(row.values) as TargetField[]).filter(f => (row.values[f] ?? '').trim() !== '');
+    const problem = p.purchasePrice !== undefined ? purchasingProblem(p) : null;
+    const update = purchasingUpdateFor(row);
+    const matchNote = row.category === 'existing' || row.category === 'conflict' ? row.match.reason : null;
+    const ref = referenceSummary(row.reference);
+    const read: [string, string][] = [
+      ['Product name', p.name || '—'],
+      ['Supplier code', p.supplierCode || '—'],
+      ['Stock unit', p.stockUnit || 'each'],
+      ['Order unit', p.orderUnit || p.stockUnit || 'each'],
+      ['Pack quantity', p.unitsPerOrderUnit && p.unitsPerOrderUnit > 1 ? p.unitsPerOrderUnit.toLocaleString('en-AU') : '1 (not a pack)'],
+      ['Price ex GST', p.purchasePrice !== undefined ? unitPriceLabel(p) ?? formatUnitPrice(p.purchasePrice) : 'No price'],
+      ['Purchasing cost', p.purchasePrice !== undefined ? purchasingCostLabel(p) ?? '—' : '—'],
+      ['Category', p.category || '—'],
+    ];
+    const Row = ({ label, value, color }: { label: string; value: string; color?: string }) => (
+      <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.detailLabel, { color: colors.inactive }]}>{label}</Text>
+        <Text style={[styles.detailValue, { color: color ?? colors.text }]}>{value}</Text>
+      </View>
+    );
+    return (
+      <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={close} transparent={Platform.OS === 'web'}>
+        <View style={[styles.modalRoot, { backgroundColor: canvas }]} testID="import-row-details">
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: surface }]}>
+            <Pressable onPress={close} hitSlop={10}>
+              <Text style={[styles.linkText, { color: colors.inactive }]}>Close</Text>
+            </Pressable>
+            <Text style={[styles.modalTitle, styles.flex1, styles.center, { color: colors.text }]}>Row {row.rowNumber}</Text>
+            <Pressable onPress={editFromDetails} hitSlop={10} testID="import-row-details-edit">
+              <Text style={[styles.linkText, { color: colors.primary, fontWeight: '700' }]}>Edit</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}>
+            {matchNote && <Banner tone={row.category === 'conflict' ? 'error' : 'info'}>{matchNote}</Banner>}
+
+            {row.clarification && (
+              <View style={[styles.questionCard, { backgroundColor: surface, borderColor: tint(colors.warning, 0.5) }]}>
+                <Text style={[styles.choiceTitle, { color: colors.text }]}>
+                  Sold in packs of {row.clarification.quantity.toLocaleString('en-AU')}?
+                </Text>
+                <Text style={[styles.choiceSub, { color: colors.inactive, marginBottom: 12 }]}>
+                  The price stays as quoted. Your answer sets the order unit and pack quantity.
+                </Text>
+                <View style={styles.twoBtns}>
+                  <Pressable onPress={() => answerPack([row.key], 'pack')} style={({ pressed }) => [styles.outlineBtn, { borderColor: colors.primary, backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
+                    <Text style={[styles.outlineBtnText, { color: '#FFFFFF' }]}>Pack of {row.clarification.quantity.toLocaleString('en-AU')}</Text>
+                  </Pressable>
+                  <Pressable onPress={() => answerPack([row.key], 'individual')} style={({ pressed }) => [styles.outlineBtn, { borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
+                    <Text style={[styles.outlineBtnText, { color: colors.primary }]}>Individually</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            <Text style={[styles.sectionHead, { color: colors.inactive }]}>HOW SMARTSTOCK READS IT</Text>
+            {read.map(([l, v]) => <Row key={l} label={l} value={v} />)}
+            <Row
+              label="Pricing check"
+              value={p.purchasePrice === undefined ? 'No price — no total shown' : problem ?? 'OK'}
+              color={problem ? colors.warning : p.purchasePrice === undefined ? colors.inactive : colors.success}
+            />
+            <Row label="Status" value={selection.excluded.has(row.key) ? 'Removed by you' : statusLabel[row.category]} color={statusColor[row.category]} />
+
+            {!!ref && (
+              <>
+                <Text style={[styles.sectionHead, { color: colors.inactive }]}>QUOTE DETAILS (NOT SAVED)</Text>
+                <Text style={[styles.choiceSub, { color: colors.text }]}>{ref}</Text>
+              </>
+            )}
+
+            {row.issues.length > 0 && (
+              <>
+                <Text style={[styles.sectionHead, { color: colors.inactive }]}>CHECKS</Text>
+                {row.issues.map(i => (
+                  <Banner key={i.code + i.message} tone={i.level === 'error' ? 'error' : i.level === 'review' ? 'warn' : 'info'}>{i.message}</Banner>
+                ))}
+              </>
+            )}
+
+            {update && (
+              <View style={[styles.questionCard, { backgroundColor: surface, borderColor: tint(colors.primary, 0.45), marginTop: 12 }]}>
+                <Text style={[styles.choiceTitle, { color: colors.text }]}>Update the existing product</Text>
+                {update.changes.map(c => (
+                  <Text key={c.field} style={[styles.choiceSub, { color: colors.text }]}>
+                    {c.field}: <Text style={{ color: colors.inactive }}>{c.before}</Text> → <Text style={{ fontWeight: '700' }}>{c.after}</Text>
+                  </Text>
+                ))}
+                <Pressable
+                  disabled={updatingPurchasing}
+                  onPress={() => applyPurchasingUpdates([{ row, update }])}
+                  style={({ pressed }) => [styles.outlineBtn, { flex: 0, marginTop: 12, borderColor: colors.primary, opacity: pressed || updatingPurchasing ? 0.6 : 1 }]}
+                >
+                  <Text style={[styles.outlineBtnText, { color: colors.primary }]}>Update purchasing details</Text>
+                </Pressable>
+              </View>
+            )}
+
+            <Text style={[styles.sectionHead, { color: colors.inactive }]}>EXTRACTED FROM THE DOCUMENT</Text>
+            {raw.length === 0 ? (
+              <Text style={[styles.choiceSub, { color: colors.inactive }]}>No values were read from this row.</Text>
+            ) : (
+              raw.map(f => <Row key={f} label={FIELD_LABEL[f]} value={row.values[f] ?? ''} />)
+            )}
+            {row.edited && (
+              <Text style={[styles.choiceSub, { color: colors.primary, marginTop: 8 }]}>Includes your edits or answers.</Text>
+            )}
+
+            <Pressable onPress={editFromDetails} style={({ pressed }) => [styles.outlineBtn, { flex: 0, marginTop: 20, borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}>
+              <Text style={[styles.outlineBtnText, { color: colors.primary }]}>Edit this row</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
+    );
+  };
+
   return (
     <View style={[styles.flex1, { backgroundColor: canvas }]}>
       <Stack.Screen
@@ -1300,6 +1590,7 @@ export default function CatalogueImportScreen() {
       {step === 'done' && renderDoneStep()}
       {renderFieldPicker()}
       {renderEditModal()}
+      {renderDetailsModal()}
     </View>
   );
 }
@@ -1416,6 +1707,16 @@ const styles = StyleSheet.create({
   rowName: { fontSize: 15.5, fontWeight: '600', lineHeight: 20 },
   rowMeta: { fontSize: 13, marginTop: 3 },
   rowRef: { fontSize: 12, marginTop: 2, fontStyle: 'italic' },
+  rowActions: { alignItems: 'center', gap: 4 },
+  groupToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 12 },
+  groupItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth },
+  groupItemName: { fontSize: 14, fontWeight: '600' },
+  miniBtn: { paddingHorizontal: 10, height: 30, borderRadius: 8, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  miniBtnText: { fontSize: 13, fontWeight: '700' },
+  detailRow: { flexDirection: 'row', paddingVertical: 9, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  detailLabel: { width: 130, fontSize: 13.5 },
+  detailValue: { flex: 1, fontSize: 14, fontWeight: '600', textAlign: 'right' },
+  sectionHead: { fontSize: 12, fontWeight: '700', letterSpacing: 0.6, marginTop: 18, marginBottom: 4 },
   binBtn: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginRight: -4, marginTop: -4 },
   docLine: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
   filterExplain: { fontSize: 12.5, lineHeight: 17, marginBottom: 10, marginTop: -4 },

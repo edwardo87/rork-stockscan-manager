@@ -83,6 +83,11 @@ export interface OrderItem {
   priceBasisUnit?: string;
   /** Extended line total ex GST for this item. */
   lineTotal?: number;
+  /**
+   * App-only (never persisted): why this item's pricing cannot be totalled
+   * honestly (unknown pack quantity, price-unit mismatch). Blocks PO submission.
+   */
+  pricingIssue?: string;
 }
 
 export interface StocktakeItem {

@@ -58,9 +58,13 @@ import {
   stepBefore,
   toggleSelected,
   withDefaultSelection,
+  answerPackQuestion,
+  applyPackAnswers,
+  clarificationGroups,
+  purchasingUpdateFor,
 } from '@/services/catalogueImportService';
 import { generateCSVTemplate, matchProductsForImport } from '@/services/csvImportService';
-import { effectivePriceBasisQuantity, lineTotalExGst, unitPriceLabel } from '@/utils/purchasing';
+import { effectivePriceBasisQuantity, lineTotalExGst, purchasingCostLabel, purchasingProblem, unitPriceLabel } from '@/utils/purchasing';
 
 let failures = 0;
 let passes = 0;
@@ -308,7 +312,9 @@ async function loadDoc(file: string) {
     return r;
   };
   const counts = countReview(rows, withDefaultSelection(rows, emptySelection(), new Set()), sourceRowCount(sheet));
-  return { parsed, sheet, table, rows, by, counts, map: mapOf(table.headers, mapping) };
+  const rebuild = (overrides: Record<string, Partial<Record<TargetField, string>>>, existing: Product[] = []) =>
+    reviewDrafts(existing, buildDrafts(table, mapping, { source: 'pdf', supplier: { name: 'Test Supplier' } }, sheet, overrides));
+  return { parsed, sheet, table, rows, by, counts, map: mapOf(table.headers, mapping), rebuild };
 }
 const noise = /sub ?total|page:|quote is valid|abn|phone|terms|conditions|delivery address|total amount|gst total/i;
 
@@ -324,7 +330,8 @@ async function realSupplierDocuments() {
   const stp = kj.by('STP060012A2');
   check('STP060012A2: $0.01770 each, precision kept', [stp.product.purchasePrice, stp.product.priceBasisQuantity, stp.product.priceBasisUnit], [0.0177, 1, 'each']);
   check('STP060012A2: quoted 1,000 is NOT a pack size', [stp.reference.quotedQuantity, stp.product.unitsPerOrderUnit, stp.product.orderUnit], [1000, undefined, undefined]);
-  check('STP060012A2: 1,000 × $0.0177 reconciles with $17.70', [stp.reference.lineTotal, stp.reference.check?.status, stp.status], [17.7, 'match', 'ready']);
+  check('STP060012A2: 1,000 × $0.0177 reconciles with $17.70', [stp.reference.lineTotal, stp.reference.check?.status], [17.7, 'match']);
+  check('STP060012A2: pack question asked (not guessed), not pre-selected', [stp.status, issueCodes(stp).includes('pack-question'), stp.clarification?.quantity, stp.includeByDefault], ['review', true, 1000, false]);
   check('STP060012A2: price label keeps 4 decimals', unitPriceLabel(stp.product), '$0.0177 per each');
   const el = kj.by('EL010505T');
   check('EL010505T: 15% discount applied to net price (2.55793 → 2.17424)', [Math.round((el.product.purchasePrice ?? 0) * 1e5) / 1e5, el.reference.listPrice, issueCodes(el).includes('discount-applied'), el.status], [2.17424, 2.55793, true, 'ready']);
@@ -333,7 +340,8 @@ async function realSupplierDocuments() {
   check('SUNDRY lines are distinct products, not duplicates of each other', [sundry.length, sundry.some(r => r.category === 'existing')], [7, false]);
   check('$0 SUNDRY lines need review (price left blank)', kj.rows.filter(r => issueCodes(r).includes('zero-price')).map(r => `${r.status}:${r.product.purchasePrice}`), ['review:undefined', 'review:undefined']);
   check('"4LTR" / "1LTR" per-cell read as a container, confirm', [kj.rows.find(r => r.product.name.startsWith('METHYLATED'))?.status, kj.rows.find(r => r.product.name.startsWith('MINERAL TURPS'))?.product.priceBasisUnit], ['review', 'each']);
-  check('KJ counts: 104 ready, 4 review, 0 existing, 0 cannot', [kj.counts.ready, kj.counts.review, kj.counts.existing, kj.counts.cannotImport, kj.counts.sourceRows], [104, 4, 0, 0, 200]);
+  check('KJ counts: 58 ready, 4 review + 46 pack questions, 0 existing, 0 cannot', [kj.counts.ready, kj.counts.review, kj.counts.existing, kj.counts.cannotImport, kj.counts.sourceRows], [58, 50, 0, 0, 200]);
+  await kjPackRegression(kj);
 
   section('Real document: Austain price quote QBN57097');
   const au = await loadDoc('austain-price-quote-qbn57097.pdf');
@@ -383,6 +391,62 @@ async function realSupplierDocuments() {
   let humeKind = 'parsed';
   try { await parseCatalogueFile(fixture('suppliers/hume-timber-reveals.pdf'), 'hume.pdf', 'pdf'); } catch (e) { humeKind = e instanceof PdfLimitationError ? e.kind : 'other'; }
   check('Hume PDF has no text layer → explained, nothing guessed', humeKind, 'no-text');
+
+  section('Pack questions: no false positives on other documents');
+  const asked = (rows: { clarification?: unknown }[]) => rows.filter(r => r.clarification).length;
+  check('Austain price quote: none asked (box qty column given)', asked(au.rows), 0);
+  check('Austain quote: none asked (priced per 100)', asked(aq.rows), 0);
+  check('Austain QBN57099: none asked', asked(a9.rows), 0);
+  check('Suncoast: none asked (priced per 100 / 1,000 or full-cent each)', asked(sc.rows), 0);
+  check('Baker: none asked (no quoted quantities)', asked(bk.rows), 0);
+  check('no imported fixture row has unresolved pricing', [kj, au, aq, a9, sc, bk].flatMap(d => d.rows).filter(r => purchasingProblem(r.product)).length, 0);
+}
+
+type LoadedDoc = Awaited<ReturnType<typeof loadDoc>>;
+
+/** KJ regression (one example, not a rule): 6G X 1/2 STS PAN SQ1 304 = pack of 1,000 at $17.70 ex GST. */
+async function kjPackRegression(kj: LoadedDoc) {
+  section('KJ regression: STP060012A2 sold in packs of 1,000');
+  check('KJ: not asked for full-cent singles (12 cans at $12.50, 30 at $9.40)', [kj.by('INOX300GCAN').clarification, kj.by('3HIS101070').clarification], [undefined, undefined]);
+  check('KJ: not asked when priced per pair', kj.by('PPEEPU0645').clarification, undefined);
+  const groups = clarificationGroups(kj.rows);
+  check('questions grouped by quoted quantity (largest group first)', [groups[0].quantity, groups[0].keys.length > 10, groups.reduce((n, g) => n + g.keys.length, 0)], [1000, true, 46]);
+  const stp = kj.by('STP060012A2');
+  check('pack answer keeps the printed price, records the pack', answerPackQuestion(stp.values, stp.clarification!, 'pack').orderUnit, 'pack of 1,000');
+
+  // Bulk "yes, packs" for the 1,000 group, with STP060010A2 answered individually as an exception.
+  const thousand = groups.find(g => g.quantity === 1000)!;
+  const exception = kj.by('STP060010A2').key;
+  let overrides = applyPackAnswers({}, kj.rows, thousand.keys.filter(k => k !== exception), 'pack');
+  overrides = applyPackAnswers(overrides, kj.rows, [exception], 'individual');
+  const after = kj.rebuild(overrides);
+  const a = after.find(r => r.product.supplierCode === 'STP060012A2')!;
+  check('answered row is ready, question gone', [a.status, a.clarification, issueCodes(a).includes('pack-question')], ['ready', undefined, false]);
+  check('saved into purchasing fields', [a.product.orderUnit, a.product.unitsPerOrderUnit, a.product.purchasePrice, a.product.priceBasisQuantity, a.product.priceBasisUnit], ['pack of 1,000', 1000, 0.0177, 1, 'each']);
+  check('1 pack = $17.70 ex GST', lineTotalExGst(a.product, 1), 17.7);
+  check('3 packs = $53.10 ex GST', lineTotalExGst(a.product, 3), 53.1);
+  check('catalogue label shows pack price and unit price', purchasingCostLabel(a.product), '$17.70 per pack of 1,000 · $0.0177 each');
+  const ex = after.find(r => r.product.supplierCode === 'STP060010A2')!;
+  check('exception answered individually: ordered each, 3 = $0.05', [ex.status, ex.product.orderUnit, lineTotalExGst(ex.product, 3)], ['ready', 'each', 0.05]);
+  check('other groups still open', clarificationGroups(after).every(g => g.quantity !== 1000), true);
+
+  section('Existing KJ products: purchasing update without deletion');
+  const existing: Product = {
+    ...stp.product, id: 'kj-existing-1', barcode: '9300000000001', currentStock: 4200, minStock: 1000, price: 0,
+  };
+  const reviewed = kj.rebuild(overrides, [existing]);
+  const row = reviewed.find(r => r.product.supplierCode === 'STP060012A2')!;
+  check('answered row conflicts with the existing product (never re-added)', [row.category, row.importable, row.match.purchasingOnly], ['conflict', false, true]);
+  const upd = purchasingUpdateFor(row);
+  check('update targets the existing product, purchasing fields only', [upd?.productId, Object.keys(upd?.updates ?? {}).sort()], ['kj-existing-1', ['cost', 'orderUnit', 'unitsPerOrderUnit']]);
+  check('cost per stock unit unchanged ($0.0177 each)', upd?.updates.cost, 0.0177);
+  check('before → after shown', upd?.changes.map(c => `${c.field}: ${c.before} → ${c.after}`), ['Order unit: none → pack of 1,000', 'Pack quantity: none → 1000']);
+  const updated = { ...existing, ...upd!.updates };
+  check('after update: stock, name, barcode untouched; 3 packs = $53.10', [updated.currentStock, updated.name, updated.barcode, lineTotalExGst(updated, 3)], [4200, existing.name, '9300000000001', 53.1]);
+  const otherSupplier = kj.rebuild(overrides, [{ ...existing, supplier: 'Someone Else' }]).find(r => r.product.supplierCode === 'STP060012A2')!;
+  check('different supplier → not eligible for an update', purchasingUpdateFor(otherSupplier), null);
+  const knownPack = kj.rebuild({}, [{ ...existing, orderUnit: 'pack of 1,000', unitsPerOrderUnit: 1000 }]).find(r => r.product.supplierCode === 'STP060012A2')!;
+  check('not asked again once the catalogue knows the pack', [knownPack.clarification, issueCodes(knownPack).includes('pack-question')], [undefined, false]);
 }
 
 // ===========================================================================
@@ -404,7 +468,11 @@ function pricingRules() {
   section('Pricing in drafts');
   const ctx = { source: 'csv' as const, supplier: { name: 'S' } };
   const q1 = buildDraft('a', 1, { name: 'Screw', supplierCode: 'X1', quotedQuantity: '1000', purchasePrice: '0.0177', lineTotal: '17.70' }, ctx);
-  check('quote line: quoted qty never becomes pack; priced each', [q1.product.unitsPerOrderUnit, q1.reference.check?.basis, effectivePriceBasisQuantity(q1.product), q1.status], [undefined, 1, 1, 'ready']);
+  check('quote line: quoted qty never becomes pack; priced each; asked instead', [q1.product.unitsPerOrderUnit, q1.reference.check?.basis, effectivePriceBasisQuantity(q1.product), q1.status, q1.clarification?.quantity], [undefined, 1, 1, 'review', 1000]);
+  const qSingle = buildDraft('a2', 1, { name: 'Sealant', supplierCode: 'X1b', quotedQuantity: '12', purchasePrice: '8.50', lineTotal: '102.00' }, ctx);
+  check('12 × $8.50: ordinary quote quantity, no question', [qSingle.status, qSingle.clarification], ['ready', undefined]);
+  const qDoc = buildDraft('a3', 1, { name: 'Screw', supplierCode: 'X1c', quotedQuantity: '1000', purchasePrice: '0.0177', orderUnit: 'each' }, ctx);
+  check('document gives an order unit → no question', qDoc.clarification, undefined);
   const q2 = buildDraft('b', 2, { name: 'Screw', supplierCode: 'X2', quotedQuantity: '1000', purchasePrice: '4.56', lineTotal: '45.60' }, ctx);
   check('basis worked out from the line total (per 100), explained', [q2.product.priceBasisQuantity, issueCodes(q2).includes('basis-from-total'), q2.status], [100, true, 'ready']);
   const q3 = buildDraft('c', 3, { name: 'Bolt', supplierCode: 'X3', quotedQuantity: '10', purchasePrice: '3.00', priceBasisQuantity: 'EA', lineTotal: '50.00' }, ctx);

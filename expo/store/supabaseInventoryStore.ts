@@ -34,7 +34,7 @@ function deriveSuppliersFromProducts(products: Product[]): Supplier[] {
 }
 import { SupabaseService } from '@/services/supabaseService';
 import { supabase, getCurrentUser, isSupabaseConfigured, signOut as signOutFromSupabase } from '@/lib/supabase';
-import { buildOrderItem } from '@/utils/purchasing';
+import { buildOrderItem, prepareOrderForSubmission } from '@/utils/purchasing';
 import {
   matchProductsForImport,
   matchRowsForImport,
@@ -766,13 +766,25 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
 
       submitOrder: async () => {
         const state = get();
+
+        // Pricing guard: rebuild every line from the product as it is now and
+        // refuse to generate a PO while any line's pricing is unresolved
+        // (unknown pack quantity, price unit that doesn't convert). A missing
+        // price is allowed — that line simply has no total.
+        const readiness = prepareOrderForSubmission(state.currentOrderItems, state.products);
+        if (readiness.blocked.length > 0) {
+          set({ currentOrderItems: readiness.items });
+          const names = readiness.blocked.map(b => b.name).join(', ');
+          throw new Error(`Fix the purchasing details before sending this order: ${names}.`);
+        }
+        const orderItems = readiness.items;
         set({ isLoading: true, error: null });
 
         try {
           // Group items by supplier
           const itemsBySupplier: Record<string, OrderItem[]> = {};
           
-          state.currentOrderItems.forEach(item => {
+          orderItems.forEach(item => {
             if (!itemsBySupplier[item.supplier]) {
               itemsBySupplier[item.supplier] = [];
             }

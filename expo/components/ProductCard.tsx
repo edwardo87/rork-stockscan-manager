@@ -5,6 +5,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { AlertTriangle, Info, Clock, Edit } from 'lucide-react-native';
 import { formatDistanceToNow } from '@/utils/dateUtils';
 import { useRouter } from 'expo-router';
+import { effectiveStockUnit, purchasingCostParts, purchasingProblem } from '@/utils/purchasing';
 
 interface ProductCardProps {
   product: Product;
@@ -16,6 +17,11 @@ export default function ProductCard({ product, onPress, onEdit }: ProductCardPro
   const { colors } = useThemeStore();
   const router = useRouter();
   const isLowStock = product.currentStock < product.minStock;
+  // Supplier purchasing cost (ex GST) with its pricing unit; the sell price is
+  // a separate field and only shown when one is actually recorded.
+  const cost = purchasingCostParts(product);
+  const pricingIssue = purchasingProblem(product);
+  const stockUnit = effectiveStockUnit(product);
 
   const handleEdit = () => {
     if (onEdit) {
@@ -71,7 +77,7 @@ export default function ProductCard({ product, onPress, onEdit }: ProductCardPro
               styles.stockValue, 
               isLowStock ? { color: colors.warning } : { color: colors.success }
             ]}>
-              {product.currentStock} {product.unit}
+              {product.currentStock} {stockUnit}
             </Text>
           </View>
           
@@ -94,9 +100,28 @@ export default function ProductCard({ product, onPress, onEdit }: ProductCardPro
       </View>
       
       <View style={[styles.footer, { borderTopColor: colors.border }]}>
-        <View style={styles.priceContainer}>
-          <Text style={[styles.priceLabel, { color: colors.inactive }]}>Price:</Text>
-          <Text style={[styles.price, { color: colors.text }]}>${product.price.toFixed(2)}</Text>
+        <View style={styles.priceContainer} testID={`product-cost-${product.id}`}>
+          <Text style={[styles.priceLabel, { color: colors.inactive }]}>Cost ex GST</Text>
+          {cost ? (
+            <View style={styles.costLine}>
+              <Text style={[styles.price, { color: colors.text }]}>{cost.amount}</Text>
+              <Text style={[styles.costPer, { color: colors.text }]} numberOfLines={1}> {cost.per}</Text>
+            </View>
+          ) : (
+            <Text style={[styles.costMissing, { color: colors.inactive }]}>No purchase price</Text>
+          )}
+          {cost?.detail ? (
+            <Text style={[styles.costDetail, { color: colors.inactive }]}>{cost.detail}</Text>
+          ) : null}
+          {pricingIssue ? (
+            <View style={styles.costIssue}>
+              <AlertTriangle size={13} color={colors.warning} />
+              <Text style={[styles.costIssueText, { color: colors.warning }]} numberOfLines={2}>{pricingIssue}</Text>
+            </View>
+          ) : null}
+          {product.price > 0 ? (
+            <Text style={[styles.costDetail, { color: colors.inactive }]}>Sell ${product.price.toFixed(2)}</Text>
+          ) : null}
         </View>
         
         <TouchableOpacity 
@@ -190,16 +215,48 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   priceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flex: 1,
+    marginRight: 12,
   },
   priceLabel: {
-    fontSize: 14,
-    marginRight: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  costLine: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexWrap: 'wrap',
   },
   price: {
     fontSize: 20,
     fontWeight: '700',
+  },
+  costPer: {
+    fontSize: 14,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  costDetail: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  costMissing: {
+    fontSize: 15,
+    fontStyle: 'italic',
+  },
+  costIssue: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    marginTop: 4,
+  },
+  costIssueText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
   },
   infoButton: {
     width: 36,

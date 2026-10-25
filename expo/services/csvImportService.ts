@@ -398,6 +398,14 @@ export interface RowMatch {
   reason: string;
   /** The existing product the row matched, when any. */
   match?: Product;
+  /**
+   * Conflict rows only: true when the row is the same product (same supplier,
+   * stock unit and identity) and differs ONLY in purchasing details (order
+   * unit, pack quantity, purchase price, price basis, or a supplier code the
+   * existing product lacks). Such rows may be applied to the existing product
+   * as an explicit, confirmed purchasing update — never automatically.
+   */
+  purchasingOnly?: boolean;
 }
 
 /**
@@ -523,17 +531,24 @@ export function matchRowsForImport(existing: Product[], incoming: Product[]): Ro
     }
 
     const conflictReasons: string[] = [];
+    // Any difference outside purchasing details makes the row ineligible for
+    // a purchasing-only update of the existing product.
+    let identityDiffers = false;
     if (supplierProvided && textDiffers(row.supplier, match.supplier)) {
       conflictReasons.push(`supplier ("${row.supplier}" vs "${match.supplier}")`);
+      identityDiffers = true;
     }
     if (row.supplierCode && textDiffers(row.supplierCode, match.supplierCode)) {
       conflictReasons.push(`supplier code ("${row.supplierCode}" vs "${match.supplierCode ?? 'none'}")`);
+      if (norm(match.supplierCode)) identityDiffers = true;
     }
     if (row.stockUnit && textDiffers(row.stockUnit, match.stockUnit || match.unit)) {
       conflictReasons.push(`stock unit ("${row.stockUnit}" vs "${match.stockUnit || match.unit}")`);
+      identityDiffers = true;
     }
     if (row.unit && row.unit !== 'each' && !row.stockUnit && textDiffers(row.unit, match.stockUnit || match.unit)) {
       conflictReasons.push(`stock unit ("${row.unit}" vs "${match.stockUnit || match.unit}")`);
+      identityDiffers = true;
     }
     if (row.orderUnit && textDiffers(row.orderUnit, match.orderUnit)) {
       conflictReasons.push(`order unit ("${row.orderUnit}" vs "${match.orderUnit ?? 'none'}")`);
@@ -556,6 +571,7 @@ export function matchRowsForImport(existing: Product[], incoming: Product[]): Ro
         status: 'conflict',
         match,
         reason: `Matches existing "${match.name}" by ${matchReason} but differs in ${conflictReasons.join(', ')} — existing product left unchanged.`,
+        purchasingOnly: !identityDiffers,
       });
       continue;
     }

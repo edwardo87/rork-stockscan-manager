@@ -2,18 +2,23 @@ import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { OrderItem } from '@/types/inventory';
 import { useThemeStore } from '@/store/themeStore';
-import { Trash2 } from 'lucide-react-native';
+import { Trash2, AlertTriangle, ChevronRight } from 'lucide-react-native';
 import QuantityInput from './QuantityInput';
-import { formatOrderQuantity, lineTotalExGst } from '@/utils/purchasing';
+import { formatOrderQuantity } from '@/utils/purchasing';
 
 interface OrderItemCardProps {
   item: OrderItem;
+  /** Why this line's pricing can't be totalled (blocks sending the PO). */
+  pricingIssue?: string;
+  onFixPricing?: () => void;
   onUpdateQuantity: (productId: string, quantity: number) => void;
   onRemove: (productId: string) => void;
 }
 
 export default function OrderItemCard({ 
   item, 
+  pricingIssue,
+  onFixPricing,
   onUpdateQuantity, 
   onRemove 
 }: OrderItemCardProps) {
@@ -23,7 +28,10 @@ export default function OrderItemCard({
   // card also shows the stock-unit equivalent and the ex-GST line total.
   const orderQty = item.orderQuantity ?? item.quantity;
   const qtyText = formatOrderQuantity(item, orderQty);
-  const lineTotal = lineTotalExGst(item, orderQty);
+  // The line total is the item's own snapshot (built from the product by the
+  // pricing guard) — never recomputed here, and hidden when unresolved.
+  const issue = pricingIssue ?? item.pricingIssue;
+  const lineTotal = issue ? null : item.lineTotal ?? null;
 
   return (
     <View style={[styles.container, { 
@@ -66,6 +74,22 @@ export default function OrderItemCard({
           </View>
         )}
       </View>
+
+      {issue ? (
+        <TouchableOpacity
+          style={[styles.issue, { backgroundColor: colors.error + '12', borderColor: colors.error + '50' }]}
+          onPress={onFixPricing}
+          disabled={!onFixPricing}
+          testID={`order-item-issue-${item.productId}`}
+        >
+          <AlertTriangle size={16} color={colors.error} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.issueText, { color: colors.text }]}>{issue}</Text>
+            {onFixPricing ? <Text style={[styles.issueLink, { color: colors.primary }]}>Fix purchasing details</Text> : null}
+          </View>
+          {onFixPricing ? <ChevronRight size={18} color={colors.inactive} /> : null}
+        </TouchableOpacity>
+      ) : null}
       
       <View style={styles.quantityContainer}>
         <Text style={[styles.orderQtyLabel, { color: colors.inactive }]}>
@@ -124,6 +148,24 @@ const styles = StyleSheet.create({
   value: {
     fontSize: 14,
     flex: 1,
+  },
+  issue: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  issueText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  issueLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 4,
   },
   quantityContainer: {
     marginTop: 8,

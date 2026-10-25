@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Edit, ShoppingBag, ClipboardList, Printer, Share } from 'lucide-react-native';
+import { Edit, ShoppingBag, ClipboardList, Printer, Share, AlertTriangle } from 'lucide-react-native';
+import { effectiveStockUnit, effectiveUnitsPerOrderUnit, formatOrderQuantity, purchasingCostParts, purchasingProblem, unitPriceLabel } from '@/utils/purchasing';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import QuantityInput from '@/components/QuantityInput';
@@ -329,6 +330,53 @@ export default function ProductDetailsScreen() {
               </View>
             </View>
 
+            {/* Purchasing Section — supplier cost and how this product is ordered */}
+            <View style={[styles.section, { borderColor: colors.border }]} testID="product-purchasing-section">
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Purchasing</Text>
+              {(() => {
+                const stockUnit = effectiveStockUnit(product);
+                const cost = purchasingCostParts(product);
+                const issue = purchasingProblem(product);
+                const priceLabel = unitPriceLabel(product);
+                const orderUnit = (product.orderUnit || '').trim();
+                const upou = effectiveUnitsPerOrderUnit(product);
+                const example = orderUnit ? formatOrderQuantity(product, 1) : null;
+                const rows: [string, string][] = [
+                  ['Supplier code', product.supplierCode?.trim() || '—'],
+                  ['Stock unit', stockUnit],
+                  ['Order unit', orderUnit || `${stockUnit} (ordered singly)`],
+                  ['Pack quantity', orderUnit ? `${upou.toLocaleString('en-AU')} ${stockUnit} per ${orderUnit}` : '—'],
+                  ['Price ex GST', priceLabel ?? 'Not recorded'],
+                ];
+                if (cost && !cost.legacy && cost.detail) rows.push(['Cost per order', `${cost.amount} ${cost.per}`], ['Cost per unit', cost.detail]);
+                if (cost?.legacy) rows.push(['Unit cost', `${cost.amount} ${cost.per}`]);
+                if (example?.stockEquivalent) rows.push(['1 order', `${example.main} ${example.stockEquivalent}`]);
+                rows.push(['Sell price', product.price > 0 ? `$${product.price.toFixed(2)}` : 'Not set']);
+                return (
+                  <>
+                    {rows.map(([label, value]) => (
+                      <View style={styles.detailRow} key={label}>
+                        <Text style={[styles.label, { color: colors.inactive }]}>{label}:</Text>
+                        <Text style={[styles.value, { color: colors.text }]}>{value}</Text>
+                      </View>
+                    ))}
+                    {issue ? (
+                      <TouchableOpacity
+                        style={[styles.purchasingIssue, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '66' }]}
+                        onPress={handleEdit}
+                        testID="product-purchasing-issue"
+                      >
+                        <AlertTriangle size={16} color={colors.warning} />
+                        <Text style={[styles.purchasingIssueText, { color: colors.text }]}>
+                          {issue} Orders show no total and can't be sent until this is fixed. Tap to edit.
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </>
+                );
+              })()}
+            </View>
+
             {/* Order Section */}
             <View style={[styles.section, { borderColor: colors.border }]}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Add to Order</Text>
@@ -463,8 +511,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 12,
   },
+  purchasingIssue: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  purchasingIssueText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   label: {
-    width: 100,
+    width: 116,
     fontSize: 14,
   },
   value: {

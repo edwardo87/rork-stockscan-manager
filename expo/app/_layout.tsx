@@ -3,7 +3,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useThemeStore } from "@/store/themeStore";
-import { Appearance, TouchableOpacity } from "react-native";
+import { Appearance, Platform, TouchableOpacity } from "react-native";
 import { ArrowLeft } from "lucide-react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
@@ -71,14 +71,16 @@ export default function RootLayout() {
 }
 
 // Visible "Back to Order" control for Order History. It always draws its own
-// chevron (the platform back button is not reliably rendered on web), uses the
-// router history when there is one, and falls back to the Order tab when the
-// screen was opened directly.
+// chevron (the platform back button is not reliably rendered on web). On native
+// it uses the router history when there is one and falls back to the Order tab
+// when the screen was opened directly. On web it always navigates straight to
+// the Order tab: Rork's web DOM bridge does not support the imperative
+// canGoBack() and throws a runtime error.
 function OrderHistoryBackButton() {
   const router = useRouter();
   const colors = useThemeStore((state) => state.colors);
   const backToOrder = () => {
-    if (router.canGoBack()) {
+    if (Platform.OS !== 'web' && router.canGoBack()) {
       router.back();
     } else {
       router.replace("/(tabs)");

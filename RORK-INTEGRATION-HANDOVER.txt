@@ -62,9 +62,13 @@ Specific reconciliations
   Follow-up (same day, owner-reported): with the duplicate bar gone the web preview
   showed no way back. The single native header now always draws a "Back to Order"
   chevron (headerLeft in _layout.tsx): a real <button role="button"
-  aria-label="Back to Order"> that calls router.back() when the router has history
-  and router.replace('/(tabs)') (the Order tab) when the screen was opened directly.
-  No second header, native navigation unchanged.
+  aria-label="Back to Order">. On native it calls router.back() when the router
+  has history and router.replace('/(tabs)') (the Order tab) when the screen was
+  opened directly. On web it ALWAYS navigates straight to the Order tab without
+  calling canGoBack(): Rork's hosted web preview DOM bridge throws the runtime
+  error "canGoBack imperative method is not supported" (reported by the owner
+  after the hosted rebuild), so the imperative check is native-only.
+  No second header, native back/history logic unchanged.
 
 4. Validation
 -------------
@@ -98,7 +102,13 @@ the Order tab; no page errors. The control is a real <button role="button"
 aria-label="Back to Order"> in the DOM. Screenshot (single header, chevron, one
 title): expo/.rork/web-verification/signed-in/history-back-header.png.
 NOTE: this verified the local export of the exact merged code, not the published
-preview, which rebuilds after this turn.
+preview, which rebuilds after this turn. The local export could not reproduce the
+hosted runtime difference (canGoBack throws only in Rork's hosted web bridge);
+the hosted preview after this turn is the acceptance surface for the back button.
+Known same-class risk, untouched (out of scope): expo/app/catalogue-import.tsx
+also calls router.canGoBack() in a press handler and would hit the same runtime
+error on the hosted web preview; it needs the same Platform.OS guard if that
+screen is used on web.
 
 6. Remaining blockers
 ---------------------

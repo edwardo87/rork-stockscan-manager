@@ -18,23 +18,23 @@ export default function EmptyState({ type, onAction }: EmptyStateProps) {
 
   switch (type) {
     case 'order':
-      icon = <ScanBarcode size={40} color={colors.accent} />;
+      icon = <ScanBarcode size={40} color={colors.primary} />;
       title = "Nothing on this order yet";
       message = "Scan a barcode or supplier code to add the first item.";
       break;
     case 'stocktake':
-      icon = <ClipboardList size={40} color={colors.accent} />;
+      icon = <ClipboardList size={40} color={colors.primary} />;
       title = "Ready to count";
       message = "Scan each product on the shelf and enter what you count.";
       break;
     case 'products':
-      icon = <Archive size={40} color={colors.accent} />;
+      icon = <Archive size={40} color={colors.primary} />;
       title = "No products found";
       message = "Your product catalog is empty. Upload a CSV file or add products manually to get started.";
       actionText = "Import products";
       break;
     default:
-      icon = <Archive size={40} color={colors.accent} />;
+      icon = <Archive size={40} color={colors.primary} />;
       title = "Nothing here yet";
       message = "Get started by adding some items.";
       actionText = "Take Action";
@@ -50,7 +50,7 @@ export default function EmptyState({ type, onAction }: EmptyStateProps) {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <View style={[styles.iconContainer, { backgroundColor: colors.accentSoft }]}>
+      <View style={[styles.iconContainer, { backgroundColor: colors.chip }]}>
         {icon}
       </View>
       <Text style={[styles.title, { color: colors.text }]}>{title}</Text>

@@ -3,58 +3,60 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Appearance } from 'react-native';
 
-// "Graphite" identity: near-black charcoal + signal red on warm concrete (light)
-// / graphite slate (dark). Legacy keys keep their roles: `background` = raised
-// surface (cards, bars), `lightGray` = screen canvas, `primary` = tint that
-// works as text AND fill.
+// Original SmartStock palette (blue, iOS green) — restored at the owner's
+// request after a graphite restyle was tried and rejected. The layout refresh
+// (compact cards, scan hero, docket-style history) is kept. Legacy keys keep
+// their roles: `background` = raised surface (cards, bars), `lightGray` =
+// screen canvas, `primary` = tint that works as text AND fill. The added
+// tokens map onto the original colours (accent = the original warning amber).
 // Light theme colors
 const lightColors = {
-  primary: "#23262B",
-  secondary: "#2F9E44",
+  primary: "#0A4D90",
+  secondary: "#34C759",
   background: "#FFFFFF",
-  card: "#FAFAF9",
-  text: "#23262B",
-  border: "#E5E4E0",
-  notification: "#C92A2A",
-  success: "#2F9E44",
-  warning: "#E8930C",
-  error: "#C92A2A",
-  inactive: "#5E6570",
-  lightGray: "#F4F4F2",
-  // Graphite tokens
-  accent: "#D64545",
-  accentSoft: "#FCECEC",
-  accentText: "#B02E2E",
-  successSoft: "#E9F7EC",
-  chip: "#EEF0F2",
-  track: "#E9E8E5",
-  primaryFill: "#23262B",
+  card: "#F7F9FC",
+  text: "#1C1C1E",
+  border: "#E4E9F2",
+  notification: "#FF3B30",
+  success: "#34C759",
+  warning: "#FF9500",
+  error: "#FF3B30",
+  inactive: "#8E8E93",
+  lightGray: "#F2F4F7",
+  // Original-family tokens (accent = original warning amber)
+  accent: "#FF9500",
+  accentSoft: "#FFF4E5",
+  accentText: "#C77800",
+  successSoft: "#EAF8EC",
+  chip: "#EFF3F7",
+  track: "#EDEFF2",
+  primaryFill: "#0A4D90",
   onPrimaryFill: "#FFFFFF",
 };
 
 // Dark theme colors
 const darkColors: typeof lightColors = {
-  primary: "#F0EEEA",
-  secondary: "#3BBF57",
-  background: "#1D2024",
-  card: "#24282D",
-  text: "#F0EEEA",
-  border: "#2C3138",
-  notification: "#FF7B7B",
-  success: "#3BBF57",
-  warning: "#F0A020",
-  error: "#FF7B7B",
-  inactive: "#9AA1AC",
-  lightGray: "#131518",
-  // Graphite tokens
-  accent: "#E45A5A",
-  accentSoft: "#341D1D",
-  accentText: "#FF8A8A",
+  primary: "#2E7DD1",
+  secondary: "#30D158",
+  background: "#121212",
+  card: "#1E1E1E",
+  text: "#F7F9FC",
+  border: "#2C2C2C",
+  notification: "#FF453A",
+  success: "#30D158",
+  warning: "#FFD60A",
+  error: "#FF453A",
+  inactive: "#6C6C70",
+  lightGray: "#1C1C1E",
+  // Original-family tokens (accent = original dark warning amber)
+  accent: "#FFD60A",
+  accentSoft: "#3A2E0A",
+  accentText: "#FFD60A",
   successSoft: "#16321F",
-  chip: "#272C33",
-  track: "#2E343C",
-  primaryFill: "#31363F",
-  onPrimaryFill: "#F0EEEA",
+  chip: "#252528",
+  track: "#2C2C2C",
+  primaryFill: "#2E7DD1",
+  onPrimaryFill: "#FFFFFF",
 };
 
 type ThemeType = 'light' | 'dark';

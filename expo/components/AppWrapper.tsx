@@ -54,7 +54,7 @@ export default function AppWrapper({ children }: AppWrapperProps) {
   if (isInitializing) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#23262B" />
+        <ActivityIndicator size="large" color="#2563eb" />
         <Text style={styles.loadingText}>Initializing SmartStock...</Text>
       </View>
     );
@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F4F4F2',
+    backgroundColor: '#f8f9fa',
   },
   loadingText: {
     marginTop: 16,

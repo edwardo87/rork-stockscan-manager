@@ -221,7 +221,7 @@ export default function ProductsScreen() {
               }}
               testID="import-supplier-catalogue"
             >
-              <FileSpreadsheet size={20} color={colors.accent} />
+              <FileSpreadsheet size={20} color={colors.primary} />
               <View style={styles.uploadOptionText}>
                 <Text style={[styles.uploadOptionTitle, { color: colors.text }]}>Import Supplier Catalogue</Text>
                 <Text style={[styles.uploadOptionDescription, { color: colors.inactive }]}>Price list as CSV, Excel or PDF — review before anything is added</Text>

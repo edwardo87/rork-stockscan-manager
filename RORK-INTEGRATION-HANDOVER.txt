@@ -105,10 +105,16 @@ NOTE: this verified the local export of the exact merged code, not the published
 preview, which rebuilds after this turn. The local export could not reproduce the
 hosted runtime difference (canGoBack throws only in Rork's hosted web bridge);
 the hosted preview after this turn is the acceptance surface for the back button.
-Known same-class risk, untouched (out of scope): expo/app/catalogue-import.tsx
-also calls router.canGoBack() in a press handler and would hit the same runtime
-error on the hosted web preview; it needs the same Platform.OS guard if that
-screen is used on web.
+Known same-class risk, fixed the same way (17 November, owner-requested follow-up):
+expo/app/catalogue-import.tsx closeWorkflow() also called router.canGoBack() in a
+press handler. It now has the identical guard: on web it always navigates straight
+to its existing safe fallback route '/(tabs)/products' (the Products tab) without
+calling canGoBack(); native keeps router.back()/canGoBack() unchanged. Navigation
+compatibility fix only — no import/pricing logic touched.
+HOSTED ACCEPTANCE: Order tab > History > Back to Order round trip confirmed PASS by
+the owner in the actual hosted preview after the rebuild (no runtime error, returns
+to Order). Catalogue-import back navigation on the hosted web preview: fix applied,
+verification pending (owner will check in the real preview).
 
 6. Remaining blockers
 ---------------------

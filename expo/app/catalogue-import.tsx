@@ -253,7 +253,9 @@ export default function CatalogueImportScreen() {
 
   const closeWorkflow = () => {
     closing.current = true;
-    if (router.canGoBack()) router.back();
+    // Rork's web DOM bridge does not support the imperative canGoBack()
+    // (runtime error), so web always goes straight to the Products tab.
+    if (Platform.OS !== 'web' && router.canGoBack()) router.back();
     else router.replace('/(tabs)/products');
   };
 

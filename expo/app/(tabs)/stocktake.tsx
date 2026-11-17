@@ -131,8 +131,8 @@ export default function StocktakeScreen() {
               style={[styles.scanButton, { backgroundColor: colors.accent }]} 
               onPress={() => setShowScanner(true)}
             >
-              <ScanBarcode size={24} color={'#1B2A41'} />
-              <Text style={[styles.scanButtonText, { color: '#1B2A41' }]}>Scan</Text>
+              <ScanBarcode size={24} color={'#FFFFFF'} />
+              <Text style={[styles.scanButtonText, { color: '#FFFFFF' }]}>Scan</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 

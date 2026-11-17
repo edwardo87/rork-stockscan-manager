@@ -3,57 +3,58 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Appearance } from 'react-native';
 
-// "Worksite" identity: ink navy + hi-vis amber on concrete (light) / slate (dark).
-// Legacy keys keep their roles: `background` = raised surface (cards, bars),
-// `lightGray` = screen canvas, `primary` = tint that works as text AND fill.
+// "Graphite" identity: near-black charcoal + signal red on warm concrete (light)
+// / graphite slate (dark). Legacy keys keep their roles: `background` = raised
+// surface (cards, bars), `lightGray` = screen canvas, `primary` = tint that
+// works as text AND fill.
 // Light theme colors
 const lightColors = {
-  primary: "#1B2A41",
+  primary: "#23262B",
   secondary: "#2F9E44",
   background: "#FFFFFF",
-  card: "#FAF9F6",
-  text: "#1B2A41",
-  border: "#E4E2DC",
-  notification: "#E03131",
+  card: "#FAFAF9",
+  text: "#23262B",
+  border: "#E5E4E0",
+  notification: "#C92A2A",
   success: "#2F9E44",
-  warning: "#F08C00",
-  error: "#E03131",
-  inactive: "#5C677D",
-  lightGray: "#F5F4F1",
-  // Worksite tokens
-  accent: "#F08C00",
-  accentSoft: "#FEF3E2",
-  accentText: "#B46600",
+  warning: "#E8930C",
+  error: "#C92A2A",
+  inactive: "#5E6570",
+  lightGray: "#F4F4F2",
+  // Graphite tokens
+  accent: "#D64545",
+  accentSoft: "#FCECEC",
+  accentText: "#B02E2E",
   successSoft: "#E9F7EC",
-  chip: "#EDF2F7",
-  track: "#EDEBE6",
-  primaryFill: "#1B2A41",
+  chip: "#EEF0F2",
+  track: "#E9E8E5",
+  primaryFill: "#23262B",
   onPrimaryFill: "#FFFFFF",
 };
 
 // Dark theme colors
 const darkColors: typeof lightColors = {
-  primary: "#F59E1B",
+  primary: "#F0EEEA",
   secondary: "#3BBF57",
-  background: "#1C212B",
-  card: "#222834",
-  text: "#F0EDE6",
-  border: "#2A3140",
-  notification: "#FF6B6B",
+  background: "#1D2024",
+  card: "#24282D",
+  text: "#F0EEEA",
+  border: "#2C3138",
+  notification: "#FF7B7B",
   success: "#3BBF57",
-  warning: "#F59E1B",
-  error: "#FF6B6B",
-  inactive: "#9AA3B5",
-  lightGray: "#11141B",
-  // Worksite tokens
-  accent: "#F59E1B",
-  accentSoft: "#382711",
-  accentText: "#FFB454",
+  warning: "#F0A020",
+  error: "#FF7B7B",
+  inactive: "#9AA1AC",
+  lightGray: "#131518",
+  // Graphite tokens
+  accent: "#E45A5A",
+  accentSoft: "#341D1D",
+  accentText: "#FF8A8A",
   successSoft: "#16321F",
-  chip: "#262D3A",
-  track: "#2C3444",
-  primaryFill: "#243046",
-  onPrimaryFill: "#F0EDE6",
+  chip: "#272C33",
+  track: "#2E343C",
+  primaryFill: "#31363F",
+  onPrimaryFill: "#F0EEEA",
 };
 
 type ThemeType = 'light' | 'dark';

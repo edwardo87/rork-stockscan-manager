@@ -136,7 +136,7 @@ export default function OrderScreen() {
               testID="order-scan-hero"
             >
               <View style={[styles.scanTile, { backgroundColor: colors.accent }]}>
-                <ScanBarcode size={26} color="#1B2A41" strokeWidth={2.4} />
+                <ScanBarcode size={26} color="#FFFFFF" strokeWidth={2.4} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.scanTitle, { color: colors.onPrimaryFill }]}>Scan to add</Text>

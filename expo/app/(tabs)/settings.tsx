@@ -12,7 +12,7 @@ import { trpcClient } from '@/lib/trpc';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { colors, theme, setTheme } = useThemeStore();
+  const { colors, theme, toggleTheme } = useThemeStore();
   const [isTestingEnv, setIsTestingEnv] = useState(false);
   const isMountedRef = useRef(true);
 
@@ -138,7 +138,10 @@ export default function SettingsScreen() {
       <View style={[styles.section, { backgroundColor: colors.background }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Appearance</Text>
         
-        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
+        <TouchableOpacity 
+          style={[styles.settingRow, { borderTopColor: colors.border }]}
+          onPress={toggleTheme}
+        >
           <View style={styles.settingInfo}>
             <View style={styles.settingTextContainer}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
@@ -151,12 +154,10 @@ export default function SettingsScreen() {
           </View>
           <Switch 
             value={theme === 'dark'}
-            onValueChange={(on) => setTheme(on ? 'dark' : 'light')}
+            onValueChange={toggleTheme}
             trackColor={{ false: colors.lightGray, true: colors.primary }}
-            thumbColor="#FFFFFF"
-            testID="dark-mode-switch"
           />
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Notifications Section */}
@@ -178,7 +179,6 @@ export default function SettingsScreen() {
             value={lowStockAlerts}
             onValueChange={toggleLowStockAlerts}
             trackColor={{ false: colors.lightGray, true: colors.primary }}
-            thumbColor="#FFFFFF"
           />
         </View>
 
@@ -197,7 +197,6 @@ export default function SettingsScreen() {
             value={orderUpdates}
             onValueChange={toggleOrderUpdates}
             trackColor={{ false: colors.lightGray, true: colors.primary }}
-            thumbColor="#FFFFFF"
           />
         </View>
 
@@ -216,7 +215,6 @@ export default function SettingsScreen() {
             value={recentlyOrdered}
             onValueChange={toggleRecentlyOrdered}
             trackColor={{ false: colors.lightGray, true: colors.primary }}
-            thumbColor="#FFFFFF"
           />
         </View>
       </View>

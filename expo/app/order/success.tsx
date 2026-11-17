@@ -25,11 +25,11 @@ export default function OrderSuccessScreen() {
         </Text>
         
         <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.primaryFill }]}
+          style={[styles.button, { backgroundColor: colors.primary }]}
           onPress={() => router.push('/po-preview')}
         >
           <ClipboardList size={20} color={colors.background} />
-          <Text style={[styles.buttonText, { color: colors.onPrimaryFill }]}>View Order History</Text>
+          <Text style={[styles.buttonText, { color: colors.background }]}>View Order History</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 

@@ -18,24 +18,24 @@ export default function EmptyState({ type, onAction }: EmptyStateProps) {
 
   switch (type) {
     case 'order':
-      icon = <ScanBarcode size={40} color={colors.primary} />;
-      title = "Nothing on this order yet";
-      message = "Scan a barcode or supplier code to add the first item.";
+      icon = <ScanBarcode size={64} color={colors.primary} />;
+      title = "No Items in Order";
+      message = "Scan a product barcode to add it to your order.";
       break;
     case 'stocktake':
-      icon = <ClipboardList size={40} color={colors.primary} />;
-      title = "Ready to count";
-      message = "Scan each product on the shelf and enter what you count.";
+      icon = <ClipboardList size={64} color={colors.primary} />;
+      title = "No Items in Stocktake";
+      message = "Scan product barcodes to start counting your inventory.";
       break;
     case 'products':
-      icon = <Archive size={40} color={colors.primary} />;
-      title = "No products found";
+      icon = <Archive size={64} color={colors.primary} />;
+      title = "No Products Found";
       message = "Your product catalog is empty. Upload a CSV file or add products manually to get started.";
-      actionText = "Import products";
+      actionText = "Upload Stock";
       break;
     default:
-      icon = <Archive size={40} color={colors.primary} />;
-      title = "Nothing here yet";
+      icon = <Archive size={64} color={colors.primary} />;
+      title = "Nothing Here Yet";
       message = "Get started by adding some items.";
       actionText = "Take Action";
   }
@@ -50,17 +50,17 @@ export default function EmptyState({ type, onAction }: EmptyStateProps) {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <View style={[styles.iconContainer, { backgroundColor: colors.chip }]}>
+      <View style={[styles.iconContainer, { backgroundColor: colors.lightGray }]}>
         {icon}
       </View>
       <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
       <Text style={[styles.message, { color: colors.inactive }]}>{message}</Text>
       {actionText && onAction && (
         <TouchableOpacity
-          style={[styles.button, { backgroundColor: colors.primaryFill }]}
+          style={[styles.button, { backgroundColor: colors.primary }]}
           onPress={onAction}
         >
-          <Text style={[styles.buttonText, { color: colors.onPrimaryFill }]}>{actionText}</Text>
+          <Text style={[styles.buttonText, { color: colors.background }]}>{actionText}</Text>
         </TouchableOpacity>
       )}
     </ScrollView>
@@ -80,34 +80,42 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
+    width: 104,
+    height: 104,
+    borderRadius: 52,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    marginBottom: 8,
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 12,
     textAlign: 'center',
   },
   message: {
-    fontSize: 15,
+    fontSize: 16,
     textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-    maxWidth: 300,
+    marginBottom: 32,
+    lineHeight: 24,
   },
   button: {
     paddingVertical: 14,
     paddingHorizontal: 28,
-    borderRadius: 14,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   buttonText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
   },
 });

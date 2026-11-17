@@ -87,7 +87,7 @@ function RootLayoutNav() {
         // Use setTimeout to ensure state update happens after current render cycle
         timeoutId = setTimeout(() => {
           if (isMounted) {
-            useThemeStore.getState().applySystemTheme(colorScheme as 'light' | 'dark');
+            useThemeStore.getState().setTheme(colorScheme as 'light' | 'dark');
           }
         }, 0);
       }
@@ -111,10 +111,9 @@ function RootLayoutNav() {
           headerStyle: {
             backgroundColor: colors.background,
           },
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
+          headerTintColor: colors.primary,
           headerTitleStyle: {
-            fontWeight: '700',
+            fontWeight: '600',
             color: colors.text,
           },
           contentStyle: {
@@ -126,7 +125,7 @@ function RootLayoutNav() {
         <Stack.Screen 
           name="product/[id]" 
           options={{ 
-            title: "Product",
+            title: "Product Details",
             presentation: "card",
           }} 
         />
@@ -154,7 +153,7 @@ function RootLayoutNav() {
         <Stack.Screen 
           name="po-preview" 
           options={{ 
-            title: "Order History",
+            title: "PO Preview",
             presentation: "card",
           }} 
         />

@@ -62,7 +62,7 @@ export default function QuantityInput({
         <TouchableOpacity 
           style={[
             styles.button, 
-            { backgroundColor: colors.chip },
+            { backgroundColor: colors.lightGray },
             value <= min && { opacity: 0.5 }
           ]} 
           onPress={decrement}
@@ -82,7 +82,7 @@ export default function QuantityInput({
         <TouchableOpacity 
           style={[
             styles.button, 
-            { backgroundColor: colors.chip },
+            { backgroundColor: colors.lightGray },
             value >= max && { opacity: 0.5 }
           ]} 
           onPress={increment}
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 8,
     overflow: 'hidden',
   },
   button: {
@@ -122,6 +122,6 @@ const styles = StyleSheet.create({
     height: 48,
     textAlign: 'center',
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '500',
   },
 });

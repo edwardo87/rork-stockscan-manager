@@ -277,16 +277,10 @@ export default function ProductDetailsScreen() {
     }
   };
 
-  const stockUnitLabel = effectiveStockUnit(product);
-  const isLow = product.currentStock < product.minStock;
-  const stockTarget = product.minStock > 0 ? product.minStock * 2 : Math.max(product.currentStock, 1);
-  const stockFill = Math.max(0, Math.min(1, product.currentStock / stockTarget));
-  const cardStyle = { backgroundColor: colors.background, borderColor: colors.border };
-
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={[styles.container, { backgroundColor: colors.lightGray }]}
+      style={[styles.container, { backgroundColor: colors.background }]}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <ScrollView style={styles.scrollView}>
@@ -295,57 +289,49 @@ export default function ProductDetailsScreen() {
             <View style={styles.header}>
               <View style={styles.headerContent}>
                 <Text style={[styles.name, { color: colors.text }]}>{product.name}</Text>
-                <View style={styles.chips}>
-                  {product.supplier ? (
-                    <View style={[styles.chip, { backgroundColor: colors.chip }]}>
-                      <Text style={[styles.chipText, { color: colors.text }]}>{product.supplier}</Text>
-                    </View>
-                  ) : null}
-                  {product.barcode ? (
-                    <View style={[styles.chip, { backgroundColor: colors.chip }]}>
-                      <Text style={[styles.chipText, styles.mono, { color: colors.inactive }]}>{product.barcode}</Text>
-                    </View>
-                  ) : null}
-                  {product.category?.trim() ? (
-                    <View style={[styles.chip, { backgroundColor: colors.chip }]}>
-                      <Text style={[styles.chipText, { color: colors.inactive }]}>{product.category}</Text>
-                    </View>
-                  ) : null}
-                </View>
+                <Text style={[styles.sku, { color: colors.inactive }]}>{product.sku}</Text>
               </View>
               <TouchableOpacity 
-                style={[styles.editButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                style={[styles.editButton, { backgroundColor: colors.lightGray }]}
                 onPress={handleEdit}
               >
-                <Edit size={16} color={colors.text} />
-                <Text style={[styles.editButtonText, { color: colors.text }]}>Edit</Text>
+                <Edit size={20} color={colors.primary} />
+                <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit</Text>
               </TouchableOpacity>
             </View>
 
-            {/* On hand */}
-            <View style={[styles.section, cardStyle, isLow && { borderColor: colors.accent, borderWidth: 1.5 }]}>
-              <View style={styles.onHandTop}>
-                <View>
-                  <Text style={[styles.overline, { color: colors.inactive }]}>ON HAND</Text>
-                  <Text style={[styles.bigNumber, { color: colors.text }]}>
-                    {product.currentStock}
-                    <Text style={[styles.bigUnit, { color: colors.inactive }]}> {stockUnitLabel}</Text>
-                  </Text>
-                </View>
-                {isLow ? (
-                  <View style={[styles.lowChip, { backgroundColor: colors.accentSoft }]}>
-                    <Text style={[styles.lowChipText, { color: colors.accentText }]}>LOW STOCK</Text>
-                  </View>
-                ) : null}
+            {/* Details Section */}
+            <View style={[styles.section, { borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Details</Text>
+              <View style={styles.detailRow}>
+                <Text style={[styles.label, { color: colors.inactive }]}>Category:</Text>
+                <Text style={[styles.value, { color: colors.text }]}>{product.category}</Text>
               </View>
-              <View style={[styles.track, { backgroundColor: colors.track }]}>
-                <View style={[styles.bar, { width: `${stockFill * 100}%`, backgroundColor: isLow ? colors.accent : colors.success }]} />
+              <View style={styles.detailRow}>
+                <Text style={[styles.label, { color: colors.inactive }]}>Supplier:</Text>
+                <Text style={[styles.value, { color: colors.text }]}>{product.supplier}</Text>
               </View>
-              <Text style={[styles.minText, { color: colors.inactive }]}>Minimum {product.minStock} {stockUnitLabel}</Text>
+              <View style={styles.detailRow}>
+                <Text style={[styles.label, { color: colors.inactive }]}>Barcode:</Text>
+                <Text style={[styles.value, { color: colors.text }]}>{product.barcode}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={[styles.label, { color: colors.inactive }]}>Current Stock:</Text>
+                <Text style={[
+                  styles.value, 
+                  { color: product.currentStock < product.minStock ? colors.error : colors.success }
+                ]}>
+                  {product.currentStock} {product.unit}
+                </Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={[styles.label, { color: colors.inactive }]}>Min Stock:</Text>
+                <Text style={[styles.value, { color: colors.text }]}>{product.minStock} {product.unit}</Text>
+              </View>
             </View>
 
             {/* Purchasing Section — supplier cost and how this product is ordered */}
-            <View style={[styles.section, cardStyle]} testID="product-purchasing-section">
+            <View style={[styles.section, { borderColor: colors.border }]} testID="product-purchasing-section">
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Purchasing</Text>
               {(() => {
                 const stockUnit = effectiveStockUnit(product);
@@ -356,34 +342,21 @@ export default function ProductDetailsScreen() {
                 const upou = effectiveUnitsPerOrderUnit(product);
                 const example = orderUnit ? formatOrderQuantity(product, 1) : null;
                 const rows: [string, string][] = [
+                  ['Supplier code', product.supplierCode?.trim() || '—'],
+                  ['Stock unit', stockUnit],
                   ['Order unit', orderUnit || `${stockUnit} (ordered singly)`],
                   ['Pack quantity', orderUnit ? `${upou.toLocaleString('en-AU')} ${stockUnit} per ${orderUnit}` : '—'],
                   ['Price ex GST', priceLabel ?? 'Not recorded'],
                 ];
+                if (cost && !cost.legacy && cost.detail) rows.push(['Cost per order', `${cost.amount} ${cost.per}`], ['Cost per unit', cost.detail]);
+                if (cost?.legacy) rows.push(['Unit cost', `${cost.amount} ${cost.per}`]);
                 if (example?.stockEquivalent) rows.push(['1 order', `${example.main} ${example.stockEquivalent}`]);
                 rows.push(['Sell price', product.price > 0 ? `$${product.price.toFixed(2)}` : 'Not set']);
-                rows.push(['Supplier code', product.supplierCode?.trim() || '—']);
-                rows.push(['Stock unit', stockUnit]);
                 return (
                   <>
-                    {cost ? (
-                      <View style={[styles.costBlock, { backgroundColor: colors.accentSoft }]}>
-                        <Text style={[styles.overline, { color: colors.accentText }]}>COST (EX GST)</Text>
-                        <Text style={[styles.costAmount, { color: colors.text }]}>
-                          {cost.amount}
-                          <Text style={[styles.costPer, { color: colors.inactive }]}> {cost.per}</Text>
-                        </Text>
-                        {cost.detail ? (
-                          <Text style={[styles.costDetail, { color: colors.accentText }]}>= {cost.detail}</Text>
-                        ) : null}
-                      </View>
-                    ) : null}
-                    {rows.map(([label, value], i) => (
-                      <View
-                        style={[styles.detailRow, { borderTopColor: colors.border }, i === 0 && !cost && { borderTopWidth: 0 }]}
-                        key={label}
-                      >
-                        <Text style={[styles.label, { color: colors.inactive }]}>{label}</Text>
+                    {rows.map(([label, value]) => (
+                      <View style={styles.detailRow} key={label}>
+                        <Text style={[styles.label, { color: colors.inactive }]}>{label}:</Text>
                         <Text style={[styles.value, { color: colors.text }]}>{value}</Text>
                       </View>
                     ))}
@@ -405,63 +378,59 @@ export default function ProductDetailsScreen() {
             </View>
 
             {/* Order Section */}
-            <View style={[styles.section, cardStyle]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                Add to order{product.orderUnit?.trim() ? ` (${product.orderUnit.trim()})` : ''}
-              </Text>
+            <View style={[styles.section, { borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Add to Order</Text>
               <QuantityInput
                 value={orderQuantity}
                 onChange={setOrderQuantity}
                 min={1}
-                label=""
               />
               <TouchableOpacity 
-                style={[styles.actionButton, { backgroundColor: colors.primaryFill }]}
+                style={[styles.actionButton, { backgroundColor: colors.primary }]}
                 onPress={handleAddToOrder}
               >
-                <ShoppingBag size={20} color={colors.onPrimaryFill} />
-                <Text style={[styles.actionButtonText, { color: colors.onPrimaryFill }]}>
+                <ShoppingBag size={20} color={colors.background} />
+                <Text style={[styles.actionButtonText, { color: colors.background }]}>
                   Add to Order
                 </Text>
               </TouchableOpacity>
             </View>
 
             {/* Stocktake Section */}
-            <View style={[styles.section, cardStyle]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Count for stocktake</Text>
+            <View style={[styles.section, { borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Add to Stocktake</Text>
               <QuantityInput
                 value={stocktakeQuantity}
                 onChange={setStocktakeQuantity}
                 min={0}
-                label=""
               />
               <TouchableOpacity 
-                style={[styles.actionButton, styles.outlineButton, { borderColor: colors.border }]}
+                style={[styles.actionButton, { backgroundColor: colors.secondary }]}
                 onPress={handleAddToStocktake}
               >
-                <ClipboardList size={20} color={colors.text} />
-                <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                <ClipboardList size={20} color={colors.background} />
+                <Text style={[styles.actionButtonText, { color: colors.background }]}>
                   Add to Stocktake
                 </Text>
               </TouchableOpacity>
             </View>
 
             {/* QR Code Section */}
-            <View style={[styles.section, cardStyle]}>
+            <View style={[styles.section, { borderColor: colors.border }]}>
               <View style={styles.qrHeader}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>QR Code</Text>
                 <View style={styles.qrActions}>
                   <TouchableOpacity 
-                    style={[styles.qrActionButton, { backgroundColor: colors.chip }]}
+                    style={[styles.qrActionButton, { backgroundColor: colors.lightGray }]}
                     onPress={handleShareProduct}
                   >
-                    <Share size={16} color={colors.text} />
+                    <Share size={16} color={colors.primary} />
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    style={[styles.qrActionButton, { backgroundColor: colors.chip }]}
+                    style={[styles.qrActionButton, { backgroundColor: colors.lightGray }]}
                     onPress={handlePrintQR}
                   >
-                    <Printer size={16} color={colors.text} />
+                    <Printer size={16} color={colors.primary} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -499,76 +468,57 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
+    marginBottom: 24,
     gap: 12,
   },
   name: {
     fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-    lineHeight: 29,
+    fontWeight: '700',
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  sku: {
+    fontSize: 14,
   },
   headerContent: {
     flex: 1,
     minWidth: 0,
   },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
-  chip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  chipText: { fontSize: 12, fontWeight: '600' },
-  mono: { fontVariant: ['tabular-nums'], letterSpacing: 0.3 },
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
+    padding: 8,
+    borderRadius: 8,
     flexShrink: 0,
-    gap: 6,
   },
   editButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
+    marginLeft: 4,
+    fontSize: 14,
+    fontWeight: '600',
   },
   section: {
-    marginBottom: 12,
+    marginBottom: 24,
     padding: 16,
-    borderRadius: 18,
+    borderRadius: 12,
     borderWidth: 1,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-    marginBottom: 12,
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
   },
-  overline: { fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
-  onHandTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  bigNumber: { fontSize: 40, fontWeight: '800', letterSpacing: -1.2, fontVariant: ['tabular-nums'], marginTop: 2 },
-  bigUnit: { fontSize: 16, fontWeight: '600', letterSpacing: 0 },
-  lowChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  lowChipText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6 },
-  track: { height: 8, borderRadius: 4, overflow: 'hidden', marginTop: 12 },
-  bar: { height: 8, borderRadius: 4 },
-  minText: { fontSize: 13, marginTop: 8, fontWeight: '500' },
-  costBlock: { borderRadius: 14, padding: 14, marginBottom: 6 },
-  costAmount: { fontSize: 26, fontWeight: '800', letterSpacing: -0.6, marginTop: 4, fontVariant: ['tabular-nums'] },
-  costPer: { fontSize: 14, fontWeight: '600', letterSpacing: 0 },
-  costDetail: { fontSize: 13, fontWeight: '700', marginTop: 2 },
   detailRow: {
     flexDirection: 'row',
-    paddingVertical: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 12,
+    marginBottom: 12,
   },
   purchasingIssue: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
-    marginTop: 8,
+    marginTop: 4,
   },
   purchasingIssueText: {
     flex: 1,
@@ -576,27 +526,25 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   label: {
-    width: 112,
+    width: 116,
     fontSize: 14,
   },
   value: {
     flex: 1,
     fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'right',
+    fontWeight: '500',
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 15,
-    borderRadius: 14,
-    marginTop: 12,
+    padding: 14,
+    borderRadius: 8,
+    marginTop: 16,
   },
-  outlineButton: { borderWidth: 1 },
   actionButtonText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
     marginLeft: 8,
   },
   errorText: {

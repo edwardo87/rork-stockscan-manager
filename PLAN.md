@@ -74,8 +74,6 @@ forward from later chapters and do not expand a chapter's scope while implementi
     - Product cards show supplier cost ex GST with its pricing unit (sell price separate); product detail has a full Purchasing section.
     - Tests: `verify-chapter3.ts` 64 pass; `verify-catalogue-import.ts` 198 pass (KJ regression: pack of 1,000 at $17.70 → 3 packs = $53.10).
   - [x] Device acceptance with real supplier files (owner-verified 8 Nov 2026, all good); **Chapter 4 complete** — the owner also corrected all 104 KJ products via pack answers + Update purchasing details. Remaining dependency: the Chapter 3 migration, so the corrected purchasing data reaches the database.
-- Visual identity pass (17 Nov 2026, restyle only, no logic changes): layout refresh kept (tab bar, Order tab scan hero + sticky total, Products Add/Import menu + compact cards with stock bar and low-stock flag, single-header docket-style Order History, Product detail On hand + Cost block, Stocktake buttons, empty states, sign-in screen). Colour: tried worksite navy+amber then graphite charcoal+red at the owner's request — both rejected; **reverted to the original blue/iOS-green palette** (themeStore tokens now map onto the original colours; accent = the original warning amber). Dark-mode switch fixed (double-fire + system-theme override; user pick now sticks and persists; theme key persists only the choice, never colours).
-
 - Chapter 5 — Complete storeroom ordering experience: not started.
 - Chapter 6 — Periodic stocktake and optional stock guidance: not started.
 - Chapter 7 — Wider beta readiness: not started.

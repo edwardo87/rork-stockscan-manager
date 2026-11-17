@@ -59,6 +59,12 @@ Specific reconciliations
   into "$17.70per"); the Category row is hidden when the category is empty.
 - Order History double header: the Stack header for po-preview is now titled
   "Order History" and the duplicate in-screen back bar was removed (native back kept).
+  Follow-up (same day, owner-reported): with the duplicate bar gone the web preview
+  showed no way back. The single native header now always draws a "Back to Order"
+  chevron (headerLeft in _layout.tsx): a real <button role="button"
+  aria-label="Back to Order"> that calls router.back() when the router has history
+  and router.replace('/(tabs)') (the Order tab) when the screen was opened directly.
+  No second header, native navigation unchanged.
 
 4. Validation
 -------------
@@ -80,6 +86,19 @@ Specific reconciliations
 The Expo web/iOS/Android preview is built on Rork's build server after this change is
 committed. No preview build ran in the sandbox. Merged UI not yet visually reviewed on the
 rebuilt preview; the three visual items above are verified at code level only.
+Verified separately, 17 November (owner confirmed theme + single header on the
+published preview): web navigation round trip of the Order History back control.
+A web bundle was exported locally from the merged + fixed code and driven in a
+headless browser with every Supabase request intercepted and answered from the
+synthetic fixtures (.rork/tmp/qa-mock-fixtures.mjs; script .rork/tmp/qa-history-back.mjs).
+No real account, no production data, no bypass logic in the app. All 7 checks PASS:
+signed-in load; Order History header shown; Back to Order visible; back returns to
+the Order tab; Back control present on direct /po-preview open; fallback lands on
+the Order tab; no page errors. The control is a real <button role="button"
+aria-label="Back to Order"> in the DOM. Screenshot (single header, chevron, one
+title): expo/.rork/web-verification/signed-in/history-back-header.png.
+NOTE: this verified the local export of the exact merged code, not the published
+preview, which rebuilds after this turn.
 
 6. Remaining blockers
 ---------------------

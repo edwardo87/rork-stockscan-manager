@@ -1,9 +1,10 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useThemeStore } from "@/store/themeStore";
-import { Appearance } from "react-native";
+import { Appearance, TouchableOpacity } from "react-native";
+import { ArrowLeft } from "lucide-react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
 import { httpBatchLink } from "@trpc/client";
@@ -69,9 +70,36 @@ export default function RootLayout() {
   );
 }
 
+// Visible "Back to Order" control for Order History. It always draws its own
+// chevron (the platform back button is not reliably rendered on web), uses the
+// router history when there is one, and falls back to the Order tab when the
+// screen was opened directly.
+function OrderHistoryBackButton() {
+  const router = useRouter();
+  const colors = useThemeStore((state) => state.colors);
+  const backToOrder = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  };
+  return (
+    <TouchableOpacity
+      onPress={backToOrder}
+      accessibilityRole="button"
+      accessibilityLabel="Back to Order"
+      accessibilityHint="Returns to the Order tab"
+      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      style={{ padding: 4 }}
+    >
+      <ArrowLeft size={24} color={colors.primary} />
+    </TouchableOpacity>
+  );
+}
+
 function RootLayoutNav() {
   const { theme, colors } = useThemeStore();
-  
   // Listen for system theme changes
   useEffect(() => {
     let isMounted = true;
@@ -156,6 +184,7 @@ function RootLayoutNav() {
           options={{ 
             title: "Order History",
             presentation: "card",
+            headerLeft: () => <OrderHistoryBackButton />,
           }} 
         />
         <Stack.Screen 

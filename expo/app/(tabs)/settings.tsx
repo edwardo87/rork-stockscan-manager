@@ -12,7 +12,10 @@ import { trpcClient } from '@/lib/trpc';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { colors, theme, toggleTheme } = useThemeStore();
+  const { colors, theme, setTheme } = useThemeStore();
+  // Both the row and the switch set the SAME explicit target computed from
+  // this render, so a press that reaches both can never toggle twice.
+  const nextTheme = theme === 'dark' ? 'light' : 'dark';
   const [isTestingEnv, setIsTestingEnv] = useState(false);
   const isMountedRef = useRef(true);
 
@@ -140,7 +143,9 @@ export default function SettingsScreen() {
         
         <TouchableOpacity 
           style={[styles.settingRow, { borderTopColor: colors.border }]}
-          onPress={toggleTheme}
+          onPress={() => setTheme(nextTheme)}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: theme === 'dark' }}
         >
           <View style={styles.settingInfo}>
             <View style={styles.settingTextContainer}>
@@ -154,7 +159,7 @@ export default function SettingsScreen() {
           </View>
           <Switch 
             value={theme === 'dark'}
-            onValueChange={toggleTheme}
+            onValueChange={(on) => setTheme(on ? 'dark' : 'light')}
             trackColor={{ false: colors.lightGray, true: colors.primary }}
           />
         </TouchableOpacity>

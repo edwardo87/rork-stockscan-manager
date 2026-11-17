@@ -40,8 +40,13 @@ type ThemeType = 'light' | 'dark';
 interface ThemeState {
   theme: ThemeType;
   colors: typeof lightColors;
+  /** True once the user picks a theme in Settings — system changes no longer override it. */
+  userSelected: boolean;
   toggleTheme: () => void;
+  /** Explicit user choice (Settings). Idempotent, so duplicate press events can't cancel out. */
   setTheme: (theme: ThemeType) => void;
+  /** System appearance change — ignored once the user has chosen a theme. */
+  applySystemTheme: (theme: ThemeType) => void;
 }
 
 // Get the system theme safely
@@ -58,29 +63,38 @@ export const useThemeStore = create<ThemeState>()(
     (set, get) => ({
       theme: getSystemTheme(),
       colors: getSystemTheme() === 'dark' ? darkColors : lightColors,
+      userSelected: false,
       
       toggleTheme: () => {
-        const currentState = get();
-        const newTheme = currentState.theme === 'light' ? 'dark' : 'light';
+        const newTheme = get().theme === 'light' ? 'dark' : 'light';
         set({
           theme: newTheme,
           colors: newTheme === 'dark' ? darkColors : lightColors,
+          userSelected: true,
         });
       },
       
       setTheme: (theme) => {
+        set({
+          theme,
+          colors: theme === 'dark' ? darkColors : lightColors,
+          userSelected: true,
+        });
+      },
+
+      applySystemTheme: (theme) => {
         const currentState = get();
-        if (currentState.theme !== theme) {
-          set({
-            theme,
-            colors: theme === 'dark' ? darkColors : lightColors,
-          });
-        }
+        if (currentState.userSelected || currentState.theme === theme) return;
+        set({
+          theme,
+          colors: theme === 'dark' ? darkColors : lightColors,
+        });
       },
     }),
     {
       name: 'theme-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({ theme: state.theme, userSelected: state.userSelected }),
       onRehydrateStorage: () => (state) => {
         if (state) {
           // Ensure colors are set correctly after rehydration

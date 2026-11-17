@@ -1,0 +1,65 @@
+CHAPTER 7 FRAMEWORK — LOCAL ONLY, 17 November 2026
+
+Prepared code is not a completed staff-access rollout. Nothing here has been
+deployed or enabled in the production app.
+
+WHAT IS PREPARED
+1. Memberships and configurable per-business plans. Existing creators become
+   owners. No plan is seeded; 1 user/250 products and 2 users/500 products remain
+   provisional SME examples. Missing plans never mean unlimited.
+2. Server member/product caps serialize concurrent additions. Bulk operations
+   roll back completely if over limit. Existing records remain editable/removable
+   after a downgrade; no automatic deletions. Explicit null means unlimited.
+   Product counts include all rows in the business; active memberships use seats.
+3. Configurable admin/manager/staff capabilities, with missing settings denied.
+   Active owners retain capability access and exclusively configure role powers.
+   No staff preset, order-approval workflow or permission to share is assumed.
+4. New businesses automatically get their recorded creator as their first owner.
+   This first seat may precede plan selection; extra seats require a plan.
+   Null creators are left unclaimed, never assigned to the current caller.
+5. Prepared read-only business-access adapter, advisory capacity helper and a
+   v2 retry journal scoped to user AND business. None is wired into a switcher.
+   Legacy v1 journals are retained and blocked from automatic reassignment.
+
+LOCAL EVIDENCE
+verify-chapter7-local.ps1 restores public schema only, stubs auth locally, and
+seeds synthetic businesses/products. It tests membership isolation, revocation,
+API write denial, owner bootstrap, role configuration, default denial and quotas.
+Real two-connection tests pass for members AND products at READ COMMITTED and
+REPEATABLE READ: exactly one competing addition wins the last available slot.
+Tests also cover batch rollback, downgrade/edit/delete, explicit unlimited and
+missing plans. Chapter6 and Chapter7 read-only preflight scripts were exercised.
+Business access/capacity/session recovery/scoped-journal tests and TypeScript pass.
+Local auth stubs do NOT prove hosted authentication or physical phone acceptance.
+
+MIGRATION DEPENDENCIES — NOT AN INSTRUCTION TO DEPLOY
+- chapter7-membership-foundation.sql
+- chapter7-membership-capacity.sql
+- chapter7-owner-bootstrap.sql (requires the capacity rule and memberships)
+- chapter7-role-permissions.sql (requires memberships)
+- chapter7-product-capacity.sql ONLY after business-scoped onboarding and plan
+  provisioning are ready. New unassigned products are deliberately rejected.
+- chapter7-release-preflight.sql is read-only inspection.
+
+Before deployment: authorize the target, verify a fresh backup, inspect live
+creators/ownership/default grants/RLS, and reconcile partial objects. Do not rerun
+CREATE migrations blindly. Legacy null creators and unassigned products need an
+explicit resolution plan. Owner/business deletion also needs a coordinated path
+because membership/entitlement references deliberately restrict deletion.
+Never drop populated tables or delete data to bring a downgraded plan under quota.
+
+STILL REQUIRED BEFORE SHARED ACCESS IS ACTIVE
+Current product/order/stocktake paths remain user-scoped. business_can_v1 is a
+prepared authorization predicate, not automatically applied to existing tables.
+Prepare business-scoped read/write APIs and RLS for every workflow, including
+child-record ownership and separate cost visibility. Connect scoped queries,
+cache invalidation and journal/RPC business identity together before a switcher.
+Add invitations/member management with trusted server-selected roles, target
+identity checks, expiry/replay protection and atomic capacity enforcement.
+Provision explicit plans; do not silently assign provisional prices or limits.
+Connect owner-controlled capability configuration and choose user-friendly role
+presets later. Staff presets/PO approval are activation decisions, not a blocker
+to continuing the configurable backend framework.
+The v2 journal needs a coordinated business-scoped RPC rollout and legacy recovery
+UI. Its caller must retain single-writer save coordination; it is not a new RPC.
+No billing, service purchase, external invitation or production data change.

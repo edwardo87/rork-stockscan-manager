@@ -1,0 +1,57 @@
+CHAPTER 7 SHARED ACCESS — TECHNICAL PROPOSAL, NOT APPROVED POLICY
+15 November 2026
+
+Observed constraints
+businessProfileService reads users.business_id and deliberately does not write
+membership/role fields. Chapter2 guards and claim_my_business govern ownership.
+supabaseService still filters many catalogue/order/stocktake operations by user_id.
+chapter6-atomic-stocktake.sql checks user ownership too. Merely adding invites
+would not allow staff to work together and loosening RLS alone would be unsafe.
+
+Decision required before implementation
+Choose one-business-per-login versus multi-business membership. Confirm who can
+manage staff, edit catalogue and supplier/business details, create/share orders,
+record counts, and delete data. Proposed simplest starting point for review:
+owner manages access/settings; staff scan/order/count; catalogue edits separately
+controlled. This is a proposal only, not an agreed product requirement.
+
+Coordinated implementation sequence after decision
+1. Prepare additive membership/invitation schema with explicit business scope,
+   creator/actor audit fields, invitation expiry, revocation and accepted status.
+   Preserve existing owners and records; migration must not reassign user data.
+2. Invitation acceptance must execute server-side under authenticated identity,
+   validate target identity/business/expiry, and atomically create membership.
+   Never trust a client role or business_id. No service key in the app.
+   Delivery mechanism remains undecided; no email service provisioned.
+3. Add server-side membership checks and explicit RLS per action/table. Test
+   owner/staff/outsider/removed-member behavior before changing client filters.
+   Child records must belong to a permitted parent business; prevent foreign-ID
+   references and membership self-promotion, including direct REST/RPC calls.
+4. Update service queries from user scope to authorized business scope; preserve
+   user_id as actor/creator if schema allows, rather than treating it as tenant.
+   Cover products, suppliers, POs/items, stocktakes/items and reorder log together.
+5. Adapt atomic stocktake ownership checks and retry journal scope. An unfinished
+   submission must remain tied to its original user AND business; switching business
+   must not replay it elsewhere. Preserve idempotency and stale-count protection.
+6. Include account/business identity in caches/query keys and clear stale requests
+   on session/business change. Test PDF business details after switching.
+7. Add invite/member management UI only when backend authorization exists;
+   permission-denied states must be explicit. Removing a member must take effect
+   at the next server operation, not depend on UI hiding or re-login alone.
+8. Disposable-database migration + rollback rehearsal, then attended deployment
+   and two-device tests before marking Chapter7 accepted.
+
+Acceptance test matrix to implement with the chosen policy
+- Owner invites intended user; wrong user, expired/revoked invite denied.
+- Concurrent/replayed acceptance creates one membership; role escalation denied.
+- Outsider cannot read/write/list another business through REST, RPC or foreign IDs.
+- Authorized staff can perform exactly permitted workflows; denied actions fail
+  both in UI and direct API calls. Removed member loses server access.
+- Existing owners keep the same data; unrelated businesses' row counts unchanged.
+- Concurrent staff stocktakes retain atomicity, conflict detection and retry safety.
+- Account/business switch cannot leak old products/history/PDF business details.
+- Legacy pre-claim owner onboarding still works, without implicit joining.
+
+Parked decision is access policy, not a claim that this chapter is complete.
+No migration, production change, invitation or service purchase performed.
+15 November correction: recovered tier discussion in RECOVERED-TIER-PLAN.txt supersedes the proposed one-business-only architecture. User now directs tier-ready multi-business framework. Exact limits/prices remain historical proposals; Staff PO approval still unresolved. Typed capacity/membership helpers are prepared and tested but NOT connected to runtime authorization or billing.

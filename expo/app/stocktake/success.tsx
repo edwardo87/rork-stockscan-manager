@@ -22,15 +22,15 @@ export default function StocktakeSuccessScreen() {
         
         <Text style={[styles.message, { color: colors.inactive }]}>
           Your inventory has been successfully updated based on your stocktake.
-          You can view the stocktake history in the inventory reports.
+          Open stocktake history to review your saved counts or share a spreadsheet.
         </Text>
         
         <TouchableOpacity 
           style={[styles.button, { backgroundColor: colors.primary }]}
-          onPress={() => router.replace('/stocktake')}
+          onPress={() => router.replace('/stocktake/history')}
         >
           <Home size={20} color={colors.background} />
-          <Text style={[styles.buttonText, { color: colors.background }]}>Back to Home</Text>
+          <Text style={[styles.buttonText, { color: colors.background }]}>View Stocktake History</Text>
         </TouchableOpacity>
       </View>
     </View>

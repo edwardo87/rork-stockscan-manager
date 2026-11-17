@@ -1,0 +1,93 @@
+SmartStock: Rork integration handover, 17 November 2026
+================================================================
+Source: SmartStock-Rork-Integration-Nov17.zip (codex/holiday-builds, local 89e7908,
+GitHub export baseline 5b270b7). 85 manifest paths. Merged by FILE CONTENT (git blob
+hashes), not ancestry.
+
+1. Backup
+---------
+A full checkpoint of the project (excluding node_modules/.git) was taken before any
+change, as a tarball in the sandbox temp dir (not in the repo). Rork also keeps the
+previous commit (7b219b4) as the restore point.
+
+2. Classification of the 85 manifest paths
+------------------------------------------
+- Current == incoming (skip): 0
+- Current == baseline (apply incoming): 85 (22 modified, 63 added)
+- Divergent (three-way merge): 0
+- Deletions in manifest: 0
+No conflicts. Every Rork-side change (dark-mode fix, 051d58e layout work, blue palette)
+lives either in files outside the manifest or was already in the baseline, so
+it was carried into incoming.
+
+Line endings: incoming.zip was packed with CRLF; the manifest hashes are LF. All 85
+files were normalised to LF and every one now matches its manifest incoming_blob hash
+exactly (0 mismatches).
+
+Modified (22): 02_CURRENT_STATE.md, 04_DEVELOPMENT_ROADMAP.md, PLAN.md,
+deploy-chapter3.ps1, expo/app/(tabs)/index.tsx, expo/app/(tabs)/settings.tsx,
+expo/app/(tabs)/stocktake.tsx, expo/app/about.tsx, expo/app/how-to-use.tsx,
+expo/app/product/[id].tsx, expo/app/qr-codes-print.tsx, expo/app/setup-guide.tsx,
+expo/app/stocktake/success.tsx, expo/components/Scanner.tsx, expo/lib/supabase.ts,
+expo/metro.config.js, expo/services/businessProfileService.ts,
+expo/services/pdfService.ts, expo/services/supabaseService.ts,
+expo/store/supabaseInventoryStore.ts, expo/types/inventory.ts, expo/types/supabase.ts.
+Added (63): CHAPTER6/7 notes, RECOVERED-TIER-PLAN.txt, RELEASE-HANDOVER.txt,
+chapter6-*.sql, chapter7-*.sql, verify-*.ps1, expo/app/product/guidance/[id].tsx,
+expo/app/stocktake/history.tsx, expo/components/ProductQrCode.tsx, new services,
+utils and expo/scripts tests/fixtures.
+
+Preserved, not touched: expo/package.json, expo/bun.lock, expo/store/themeStore.ts,
+expo/app/_layout.tsx (except the header title fix below), all files outside the manifest.
+No new packages: every package the app imports is already in package.json.
+
+Specific reconciliations
+- expo/lib/supabase.ts: the old inline web 'unhandledrejection' listener is replaced
+  by the incoming guarded handler (createExpiredSessionHandler, signOut scope 'local',
+  SSR guard). Exactly ONE unhandledrejection listener exists in the app.
+- Dark-mode fix intact: themeStore userSelected/applySystemTheme/partialize;
+  _layout Appearance listener -> applySystemTheme; settings row -> setTheme(nextTheme),
+  switch -> setTheme(on ? 'dark' : 'light').
+- PLAN.md: incoming version taken (Chapter 3 production upgrade and Chapter 4
+  acceptance recorded as complete).
+
+3. Post-merge fixes (Rork side, minimal)
+----------------------------------------
+- Typed routes: the generated, gitignored expo-router route list was stale (no
+  /stocktake/history). It was regenerated with expo-router's own generator. No source change.
+- ProductCard: price/unit gap now a margin, not a leading space (web collapsed it
+  into "$17.70per"); the Category row is hidden when the category is empty.
+- Order History double header: the Stack header for po-preview is now titled
+  "Order History" and the duplicate in-screen back bar was removed (native back kept).
+
+4. Validation
+-------------
+- rork checks --app expo (TypeScript + lint): PASS, 0 errors.
+- Focused synthetic tests, all PASS:
+  verify-chapter5, verify-stocktake-save, verify-stocktake-export,
+  verify-stock-guidance, verify-qr-label, verify-browser-qr-label,
+  verify-business-cache, verify-business-access, verify-business-capacity,
+  verify-scoped-stocktake-journal, verify-expired-session,
+  theme-integration.test (1/1), stocktake-history.test (5/5).
+  All were audited first: no network, env credentials or Supabase client imports.
+- Fixture/auth-bypass scan: no app source imports scripts/, fixtures, QA mocks or
+  .rork; no session-injection or request-interception code in the app.
+- NOT run (by instruction): SQL/PowerShell migrations, PostgreSQL fixture SQL,
+  verify-auth-deadlock, any live auth/API/production test, publish.
+
+5. Preview status
+-----------------
+The Expo web/iOS/Android preview is built on Rork's build server after this change is
+committed. No preview build ran in the sandbox. Merged UI not yet visually reviewed on the
+rebuilt preview; the three visual items above are verified at code level only.
+
+6. Remaining blockers
+---------------------
+- Chapter 6 atomic stocktake save: chapter6-atomic-stocktake.sql (and guidance /
+  preflight) NOT deployed. This is a release prerequisite; the app keeps pending counts
+  and never falls back to partial writes while the RPC is missing.
+- Chapter 7 memberships/quotas/permissions: framework present but intentionally
+  NOT wired to live access. Tiers are examples only; staff defaults and PO approval
+  rules undecided.
+- Phone acceptance of the merged build: pending (owner).
+- GitHub is not connected to this Rork project; the only remote is Rork's managed one.

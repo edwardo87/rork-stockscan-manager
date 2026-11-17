@@ -154,4 +154,6 @@ Acceptance:
 
 ## Current chapter
 
-Chapter 1 has not started. The previous completed milestone was native PDF preview and email attachment validation.
+As of 8 November 2026, Chapter 5 is in progress. See PLAN.md's reconciled
+status and deployment evidence; the chapter scopes above remain requirements,
+not an indication that every listed feature still needs building.

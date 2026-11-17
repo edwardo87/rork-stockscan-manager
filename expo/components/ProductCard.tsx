@@ -65,10 +65,12 @@ export default function ProductCard({ product, onPress, onEdit }: ProductCardPro
           <Text style={[styles.value, { color: colors.text }]}>{product.supplier}</Text>
         </View>
         
-        <View style={styles.detailRow}>
-          <Text style={[styles.label, { color: colors.inactive }]}>Category:</Text>
-          <Text style={[styles.value, { color: colors.text }]}>{product.category}</Text>
-        </View>
+        {product.category?.trim() ? (
+          <View style={styles.detailRow}>
+            <Text style={[styles.label, { color: colors.inactive }]}>Category:</Text>
+            <Text style={[styles.value, { color: colors.text }]}>{product.category}</Text>
+          </View>
+        ) : null}
         
         <View style={styles.stockContainer}>
           <View style={styles.detailRow}>
@@ -105,7 +107,7 @@ export default function ProductCard({ product, onPress, onEdit }: ProductCardPro
           {cost ? (
             <View style={styles.costLine}>
               <Text style={[styles.price, { color: colors.text }]}>{cost.amount}</Text>
-              <Text style={[styles.costPer, { color: colors.text }]} numberOfLines={1}> {cost.per}</Text>
+              <Text style={[styles.costPer, { color: colors.text }]} numberOfLines={1}>{cost.per}</Text>
             </View>
           ) : (
             <Text style={[styles.costMissing, { color: colors.inactive }]}>No purchase price</Text>
@@ -238,6 +240,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     flexShrink: 1,
+    marginLeft: 4,
   },
   costDetail: {
     fontSize: 13,

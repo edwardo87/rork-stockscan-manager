@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Info, Wrench, FileText, BookOpen, Trash2, Building2, Truck, FileSpreadsheet, LogOut } from 'lucide-react-native';
+import { Info, BookOpen, Trash2, Building2, Truck, FileSpreadsheet, LogOut } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
-import { useNotificationsStore } from '@/store/notificationsStore';
+
 import { useInventoryStore } from '@/store/inventoryStore';
-import { trpcClient } from '@/lib/trpc';
 // GoogleSheetsIntegration is dormant for MVP — kept in repo but not mounted.
 // import { GoogleSheetsIntegration } from '@/components/GoogleSheetsIntegration';
 
@@ -13,10 +12,8 @@ import { trpcClient } from '@/lib/trpc';
 export default function SettingsScreen() {
   const router = useRouter();
   const { colors, theme, setTheme } = useThemeStore();
-  // Both the row and the switch set the SAME explicit target computed from
-  // this render, so a press that reaches both can never toggle twice.
+  // Both controls choose the same explicit target, avoiding a double toggle.
   const nextTheme = theme === 'dark' ? 'light' : 'dark';
-  const [isTestingEnv, setIsTestingEnv] = useState(false);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -25,14 +22,7 @@ export default function SettingsScreen() {
     };
   }, []);
   
-  const {
-    lowStockAlerts,
-    orderUpdates,
-    recentlyOrdered,
-    toggleLowStockAlerts,
-    toggleOrderUpdates,
-    toggleRecentlyOrdered,
-  } = useNotificationsStore();
+
   
   const { clearAllData, products, signOut } = useInventoryStore();
 
@@ -68,43 +58,6 @@ export default function SettingsScreen() {
     );
   };
 
-  const testEnvironment = async () => {
-    if (!isMountedRef.current) return;
-    
-    try {
-      setIsTestingEnv(true);
-      const result = await trpcClient.test.env.query();
-      
-      if (!isMountedRef.current) return;
-      
-      if (result.success) {
-        Alert.alert(
-          "✅ Environment Check Passed",
-          "All required environment variables are properly configured.",
-          [{ text: "OK" }]
-        );
-      } else {
-        Alert.alert(
-          "❌ Environment Check Failed",
-          `Missing variables: ${result.missingVariables.join(', ')}`,
-          [{ text: "OK" }]
-        );
-      }
-    } catch (error) {
-      if (isMountedRef.current) {
-        Alert.alert(
-          "❌ Connection Error",
-          "Failed to check environment variables.",
-          [{ text: "OK" }]
-        );
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setIsTestingEnv(false);
-      }
-    }
-  };
-  
   const handleClearAllData = () => {
     Alert.alert(
       "⚠️ Clear All Data",
@@ -165,67 +118,14 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Notifications Section */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Notifications</Text>
-        
-        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
-          <View style={styles.settingInfo}>
-            <View style={styles.settingTextContainer}>
-              <Text style={[styles.settingLabel, { color: colors.text }]}>
-                Low Stock Alerts
-              </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Get notified when items run low
-              </Text>
-            </View>
-          </View>
-          <Switch 
-            value={lowStockAlerts}
-            onValueChange={toggleLowStockAlerts}
-            trackColor={{ false: colors.lightGray, true: colors.primary }}
-          />
-        </View>
-
-        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
-          <View style={styles.settingInfo}>
-            <View style={styles.settingTextContainer}>
-              <Text style={[styles.settingLabel, { color: colors.text }]}>
-                Order Updates
-              </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Get notified about order status changes
-              </Text>
-            </View>
-          </View>
-          <Switch 
-            value={orderUpdates}
-            onValueChange={toggleOrderUpdates}
-            trackColor={{ false: colors.lightGray, true: colors.primary }}
-          />
-        </View>
-
-        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
-          <View style={styles.settingInfo}>
-            <View style={styles.settingTextContainer}>
-              <Text style={[styles.settingLabel, { color: colors.text }]}>
-                Recently Ordered
-              </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Show orders from last 48 hours
-              </Text>
-            </View>
-          </View>
-          <Switch 
-            value={recentlyOrdered}
-            onValueChange={toggleRecentlyOrdered}
-            trackColor={{ false: colors.lightGray, true: colors.primary }}
-          />
-        </View>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Ordering & stock counts</Text>
+        <Text style={[styles.settingDescription, { color: colors.inactive, padding: 16 }]}>
+          SmartStock does not send automatic low-stock or order-status notifications.
+          Review recent orders while scanning, and use Stocktake History for saved physical counts.
+          Ordering never increases your physical stock count.
+        </Text>
       </View>
-
-
-
       {/* Business & Suppliers (Chapter 2) */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Business & Suppliers</Text>
@@ -375,54 +275,6 @@ export default function SettingsScreen() {
       </View>
 
       {/* Google Sheets Integration intentionally hidden for MVP beta */}
-
-      {/* Developer Tools Section */}
-      <View style={[styles.section, { backgroundColor: colors.background }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Developer Tools</Text>
-        
-        <TouchableOpacity 
-          style={[
-            styles.settingRow, 
-            { borderTopColor: colors.border },
-            isTestingEnv && { opacity: 0.7 }
-          ]}
-          onPress={testEnvironment}
-          disabled={isTestingEnv}
-        >
-          <View style={styles.settingInfo}>
-            {isTestingEnv ? (
-              <ActivityIndicator size="small" color={colors.primary} style={styles.settingIcon} />
-            ) : (
-              <Wrench size={22} color={colors.text} style={styles.settingIcon} />
-            )}
-            <View>
-              <Text style={[styles.settingLabel, { color: colors.text }]}>
-                Test Environment
-              </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                Verify environment configuration
-              </Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.settingRow, { borderTopColor: colors.border }]}
-          onPress={() => router.push('/po-preview')}
-        >
-          <View style={styles.settingInfo}>
-            <FileText size={22} color={colors.text} style={styles.settingIcon} />
-            <View>
-              <Text style={[styles.settingLabel, { color: colors.text }]}>
-                PO Preview
-              </Text>
-              <Text style={[styles.settingDescription, { color: colors.inactive }]}>
-                View latest purchase order
-              </Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </View>
 
       {/* Version Info */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>

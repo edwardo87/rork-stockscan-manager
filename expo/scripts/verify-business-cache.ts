@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import { createInvalidatableCache } from '../utils/invalidatableCache';
+let resolveOld!: (value: string) => void;
+let calls = 0, time = 0;
+const cache = createInvalidatableCache(() => {
+  calls++;
+  return calls === 1 ? new Promise<string>(resolve => { resolveOld = resolve; }) : Promise.resolve('Business B');
+}, 60, () => time);
+const oldRequest = cache.get();
+cache.clear();
+assert.equal(await cache.get(), 'Business B');
+resolveOld('Business A');
+assert.equal(await oldRequest, null, 'Old account response must not reach a document');
+assert.equal(await cache.get(), 'Business B', 'Old response must not poison the new cache');
+assert.equal(calls, 2);
+time = 61;
+assert.equal(await cache.get(), 'Business B');
+assert.equal(calls, 3, 'Expired cache reloads');
+let rejectOld!: (error: Error) => void;
+const failures = createInvalidatableCache(() => new Promise<string>((_, reject) => { rejectOld = reject; }), 60);
+const staleFailure = failures.get(); failures.clear(); rejectOld(new Error('old request failed'));
+assert.equal(await staleFailure, null);
+const currentFailure = failures.get(); rejectOld(new Error('current failure'));
+await assert.rejects(currentFailure, /current failure/);
+console.log('PASS business cache: account-switch race, cache reuse, expiry, stale failure and current failure');

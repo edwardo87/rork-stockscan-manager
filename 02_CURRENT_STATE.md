@@ -1,5 +1,9 @@
 # SmartStock Current State
 
+> Historical baseline with partial later updates. For current deployment and
+> owner acceptance use PLAN.md's 8 November 2026 reconciliation. Do not treat
+> old "Not built" or migration-pending statements below as a current task list.
+
 Status date: 5 September 2026
 
 ## Working

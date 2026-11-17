@@ -1,3 +1,5 @@
+import { waitForQrImages } from '@/services/browserQrLabelService';
+import { escapeHtml } from '@/utils/qrLabel';
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Platform, Alert, FlatList, Image } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -5,8 +7,8 @@ import { Printer, ArrowLeft, Grid, List } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 
-import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system/legacy';
+import { shareProductQrLabels } from '@/services/qrLabelService';
+
 
 interface QRLabelProps {
   product: any;
@@ -72,6 +74,7 @@ export default function QRCodesPrintScreen() {
   const { colors } = useThemeStore();
   const { products } = useInventoryStore();
   const [selectedProducts, setSelectedProducts] = useState<string[]>(products.map(p => p.id));
+  const [preparing, setPreparing] = useState(false);
   const [labelSize, setLabelSize] = useState(120); // Default shelf label size
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showAllInPreview, setShowAllInPreview] = useState(false);
@@ -95,16 +98,20 @@ export default function QRCodesPrintScreen() {
   };
 
   const handlePrintAll = async () => {
+    if (preparing) return;
     if (filteredProducts.length === 0) {
       Alert.alert('No Products Selected', 'Please select at least one product to print.');
       return;
     }
 
+    setPreparing(true);
     try {
       if (Platform.OS === 'web') {
         // Web printing with shelf label format
         const printWindow = window.open('', '_blank');
-        if (printWindow) {
+        if (!printWindow) throw new Error('Allow pop-ups for SmartStock, then try printing the labels again.');
+        printWindow.opener = null;
+        try {
           const labelsPerRow = Math.floor(210 / (labelSize * 0.3)); // A4 width estimation
           
           printWindow.document.write(`
@@ -183,10 +190,10 @@ export default function QRCodesPrintScreen() {
             const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${Math.floor(labelSize * 0.2 * 3.78)}x${Math.floor(labelSize * 0.2 * 3.78)}&data=${encodeURIComponent(product.barcode)}`;
             printWindow.document.write(`
               <div class="qr-label">
-                <img src="${qrCodeUrl}" alt="QR Code for ${product.barcode}" style="width: ${labelSize * 0.2}mm; height: ${labelSize * 0.2}mm; margin-bottom: 1mm;" />
-                <div class="product-name">${product.name}</div>
-                <div class="product-sku">${product.sku}</div>
-                <div class="product-barcode">${product.barcode}</div>
+                <img src="${qrCodeUrl}" alt="QR Code for ${escapeHtml(product.barcode)}" style="width: ${labelSize * 0.2}mm; height: ${labelSize * 0.2}mm; margin-bottom: 1mm;" />
+                <div class="product-name">${escapeHtml(product.name)}</div>
+                <div class="product-sku">${escapeHtml(product.sku)}</div>
+                <div class="product-barcode">${escapeHtml(product.barcode)}</div>
               </div>
             `);
           });
@@ -197,135 +204,22 @@ export default function QRCodesPrintScreen() {
             </html>
           `);
           printWindow.document.close();
+          await waitForQrImages(Array.from(printWindow.document.querySelectorAll('img')));
+          if (printWindow.closed) throw new Error('The label window was closed.');
+          printWindow.focus();
           printWindow.print();
+        } catch (error) {
+          printWindow.close();
+          throw error;
         }
       } else {
-        // Mobile sharing - create HTML file with QR codes for better viewing
-        const htmlContent = `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>QR Code Labels - ${filteredProducts.length} Products</title>
-              <style>
-                body { 
-                  font-family: Arial, sans-serif;
-                  margin: 10px;
-                  padding: 0;
-                  background: #f5f5f5;
-                }
-                .header {
-                  text-align: center;
-                  margin-bottom: 20px;
-                  padding: 15px;
-                  background: white;
-                  border-radius: 8px;
-                  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }
-                .labels-container {
-                  display: grid;
-                  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                  gap: 15px;
-                  padding: 10px;
-                }
-                .qr-label {
-                  background: white;
-                  border: 2px solid #ddd;
-                  border-radius: 8px;
-                  padding: 15px;
-                  text-align: center;
-                  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }
-                .qr-code {
-                  width: 120px;
-                  height: 120px;
-                  margin: 0 auto 10px;
-                  border: 1px solid #eee;
-                  border-radius: 4px;
-                }
-                .product-name {
-                  font-size: 14px;
-                  font-weight: bold;
-                  margin-bottom: 5px;
-                  color: #333;
-                  word-wrap: break-word;
-                }
-                .product-sku {
-                  font-size: 12px;
-                  color: #666;
-                  margin-bottom: 3px;
-                }
-                .product-barcode {
-                  font-size: 11px;
-                  color: #888;
-                  font-family: monospace;
-                  background: #f8f8f8;
-                  padding: 2px 4px;
-                  border-radius: 3px;
-                  word-break: break-all;
-                }
-                .product-category {
-                  font-size: 10px;
-                  color: #999;
-                  margin-top: 5px;
-                  font-style: italic;
-                }
-                @media print {
-                  body { background: white; }
-                  .labels-container {
-                    grid-template-columns: repeat(3, 1fr);
-                  }
-                  .qr-label {
-                    break-inside: avoid;
-                    box-shadow: none;
-                  }
-                }
-              </style>
-            </head>
-            <body>
-              <div class="header">
-                <h1>QR Code Labels</h1>
-                <p>${filteredProducts.length} Products • Generated ${new Date().toLocaleDateString()}</p>
-              </div>
-              <div class="labels-container">
-        `;
-        
-        let labelsHtml = '';
-        filteredProducts.forEach(product => {
-          const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(product.barcode)}&bgcolor=ffffff&color=000000`;
-          labelsHtml += `
-            <div class="qr-label">
-              <img src="${qrCodeUrl}" alt="QR Code for ${product.barcode}" class="qr-code" />
-              <div class="product-name">${product.name}</div>
-              <div class="product-sku">SKU: ${product.sku}</div>
-              <div class="product-barcode">${product.barcode}</div>
-              <div class="product-category">${product.category}</div>
-            </div>
-          `;
-        });
-        
-        const finalHtml = htmlContent + labelsHtml + `
-              </div>
-            </body>
-          </html>
-        `;
-        
-        const fileUri = FileSystem.documentDirectory + `qr-codes-${Date.now()}.html`;
-        await FileSystem.writeAsStringAsync(fileUri, finalHtml);
-        
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: 'text/html',
-            dialogTitle: `Share QR Codes for ${filteredProducts.length} Products`,
-          });
-        } else {
-          Alert.alert('Sharing not available', 'Sharing is not available on this device.');
-        }
+        await shareProductQrLabels(filteredProducts, labelSize);
       }
     } catch (error) {
       console.error('Print/Share error:', error);
-      Alert.alert('Error', 'Failed to print/share QR codes');
+      Alert.alert('Unable to prepare QR labels', error instanceof Error ? error.message : 'Failed to print/share QR codes');
+    } finally {
+      setPreparing(false);
     }
   };
 
@@ -363,8 +257,10 @@ export default function QRCodesPrintScreen() {
         <TouchableOpacity 
           style={[styles.printButton, { backgroundColor: colors.primary }]}
           onPress={handlePrintAll}
+          disabled={preparing}
+          accessibilityLabel={preparing ? 'Preparing QR labels' : 'Print QR labels'}
         >
-          <Printer size={20} color={colors.background} />
+          {preparing ? <Text style={{ color: colors.background }}>Preparing…</Text> : <Printer size={20} color={colors.background} />}
         </TouchableOpacity>
       </View>
 

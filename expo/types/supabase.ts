@@ -9,6 +9,18 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      business_memberships: {
+        Row: { business_id: string; user_id: string; role: string; status: string; created_at: string }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      business_entitlements: {
+        Row: { business_id: string; plan_code: string; member_limit: number | null; product_limit: number | null; updated_at: string }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
       users: {
         Row: {
           id: string
@@ -127,6 +139,8 @@ export interface Database {
           supplier_id: string | null
           business_id: string | null
           min_stock: number
+          desired_stock_enabled?: boolean
+          desired_stock_quantity?: number | null
           current_stock: number
           unit: string
           supplier_code: string
@@ -185,6 +199,8 @@ export interface Database {
           supplier_id?: string | null
           business_id?: string | null
           min_stock?: number
+          desired_stock_enabled?: boolean
+          desired_stock_quantity?: number | null
           current_stock?: number
           unit?: string
           supplier_code?: string
@@ -468,6 +484,10 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
+      save_stocktake_v1: {
+        Args: { p_request_id: string; p_items: Json }
+        Returns: string
+      }
       claim_my_business: {
         Args: { p_business_id: string }
         Returns: string

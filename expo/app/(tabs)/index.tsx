@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, View, Text, SectionList, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ScanBarcode, Send, ClipboardList, AlertTriangle } from 'lucide-react-native';
 import { useInventoryStore } from '@/store/inventoryStore';
@@ -7,8 +7,8 @@ import { useThemeStore } from '@/store/themeStore';
 import Scanner from '@/components/Scanner';
 import OrderItemCard from '@/components/OrderItemCard';
 import EmptyState from '@/components/EmptyState';
-import { buildOrderItem, formatOrderQuantity, prepareOrderForSubmission } from '@/utils/purchasing';
-import { OrderItem } from '@/types/inventory';
+import { prepareOrderForSubmission } from '@/utils/purchasing';
+import { supplierOrderGroups } from '@/utils/orderReview';
 
 export default function OrderScreen() {
   const router = useRouter();
@@ -37,6 +37,7 @@ export default function OrderScreen() {
     [readiness],
   );
   const blockedCount = readiness.blocked.length;
+  const supplierGroups = useMemo(() => supplierOrderGroups(readiness.items), [readiness.items]);
   const orderTotal = useMemo(() => {
     const priced = readiness.items.filter(i => i.lineTotal != null);
     if (priced.length === 0) return null;
@@ -45,22 +46,12 @@ export default function OrderScreen() {
 
   const handleBarcodeScan = (barcode: string, quantity?: number) => {
     const finalQuantity = quantity ?? 1;
-    setShowScanner(false);
     
     const product = getProductByBarcode(barcode);
     
     if (product) {
       addToOrder(product, finalQuantity);
-      // Show success feedback — Chapter 3: quantity is in ORDER units, with
-      // the stock-unit equivalent spelled out for pack-ordered products.
-      const preview: OrderItem = buildOrderItem(product, finalQuantity);
-      const qty = formatOrderQuantity(preview, finalQuantity);
-      const qtyText = qty.stockEquivalent ? `${qty.main} ${qty.stockEquivalent}` : qty.main;
-      Alert.alert(
-        "Product Added",
-        `Added ${qtyText} of ${product.name} to order`,
-        [{ text: "OK" }]
-      );
+      // Scanner confirms the addition inline and stays open for the next item.
     } else {
       Alert.alert(
         "Product Not Found",
@@ -93,7 +84,7 @@ export default function OrderScreen() {
 
     Alert.alert(
       "Submit Order",
-      "Are you sure you want to submit this order?",
+      `Create ${supplierGroups.length} supplier purchase order${supplierGroups.length === 1 ? '' : 's'}?\n\n${supplierGroups.map(g => `${g.supplier || 'Supplier not set'}: ${g.data.length} item(s)`).join('\n')}\n\nYou can review and share each purchase order afterwards.`,
       [
         { text: "Cancel", style: "cancel" },
         { 
@@ -154,8 +145,19 @@ export default function OrderScreen() {
           )}
 
           {currentOrderItems.length > 0 ? (
-            <FlatList
-              data={readiness.items}
+            <SectionList
+              sections={supplierGroups}
+              stickySectionHeadersEnabled={false}
+              renderSectionHeader={({ section }) => (
+                <View style={{ paddingVertical: 12 }}>
+                  <Text style={[styles.totalValue, { color: colors.text }]}>{section.supplier || 'Supplier not set'}</Text>
+                  <Text style={{ color: colors.inactive }}>
+                    {section.data.length} item(s) · {section.data.every(i => i.lineTotal != null && !i.pricingIssue)
+                      ? `$${section.data.reduce((sum, i) => sum + (i.lineTotal ?? 0), 0).toFixed(2)} ex GST`
+                      : 'Subtotal unavailable — check line prices'}
+                  </Text>
+                </View>
+              )}
               keyExtractor={(item) => item.productId}
               renderItem={({ item }) => (
                 <OrderItemCard

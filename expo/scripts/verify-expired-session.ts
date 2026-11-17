@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import { createExpiredSessionHandler, isExpiredRefreshToken } from '../utils/expiredSession';
+assert.ok(isExpiredRefreshToken({name:'AuthApiError',message:'Invalid Refresh Token: Refresh Token Not Found'}));
+assert.ok(isExpiredRefreshToken({code:'refresh_token_not_found'}));
+for(const value of [{code:'refresh_token_already_used'},null,'Invalid Refresh Token',new Error('network failed'),new Error('invalid refresh token'),{name:'AuthApiError',message:'Network request failed'}]) assert.equal(isExpiredRefreshToken(value),false);
+let calls=0, prevented=0, finish!:()=>void;
+const handler=createExpiredSessionHandler(()=>{calls++;return new Promise<void>(resolve=>{finish=resolve;});});
+const event={reason:{code:'refresh_token_not_found'},preventDefault:()=>{prevented++;}};
+handler({reason:new Error('offline'),preventDefault:()=>{throw new Error('must not suppress network failure');}});
+handler(event);handler(event);await Promise.resolve();
+assert.equal(calls,1);assert.equal(prevented,2);
+finish();await new Promise(resolve=>setTimeout(resolve,0));
+handler(event);await Promise.resolve();assert.equal(calls,2);finish();
+let failingCalls=0;
+const failing=createExpiredSessionHandler(async()=>{failingCalls++;throw new Error('logout unavailable');});
+failing(event);await new Promise(resolve=>setTimeout(resolve,0));failing(event);await new Promise(resolve=>setTimeout(resolve,0));
+assert.equal(failingCalls,2,'Failed recovery unlocks retry without an unhandled rejection');
+console.log('PASS expired-session recovery: exact auth errors, unrelated errors untouched, deduplicated recovery and retry after failure');

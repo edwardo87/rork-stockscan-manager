@@ -15,6 +15,11 @@ export interface Product {
    *  value clears the link when the supplier text no longer matches. */
   supplierId?: string | null;
   minStock: number;
+  /** Optional Chapter 6 guidance, separate from legacy minimum-stock badges. */
+  desiredStockEnabled?: boolean;
+  desiredStockQuantity?: number;
+  /** True only when these settings are backed by the database schema. */
+  desiredStockAvailable?: boolean;
   currentStock: number;
   unit: string;
   /** Chapter 3: unit physical stock is counted in (e.g. each, cartridge, m).

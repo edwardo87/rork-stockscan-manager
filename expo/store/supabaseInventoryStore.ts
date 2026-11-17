@@ -1,4 +1,7 @@
+import { pendingStocktake, saveStocktakeAtomically } from '@/services/stocktakeSaveService';
+import { stocktakePayload } from '@/utils/stocktakeSave';
 import { create } from 'zustand';
+import { supplierOrderGroups } from '@/utils/orderReview';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Product, OrderItem, StocktakeItem, PurchaseOrder, Supplier, BusinessProfile } from '@/types/inventory';
@@ -192,7 +195,7 @@ interface SupabaseInventoryState {
   addToStocktake: (product: Product, quantity: number) => void;
   updateStocktakeItemQuantity: (productId: string, quantity: number) => void;
   removeFromStocktake: (productId: string) => void;
-  submitStocktake: () => Promise<void>;
+  submitStocktake: (retryPending?: boolean) => Promise<void>;
   
   // Error Management
   setError: (error: string | null) => void;
@@ -782,17 +785,10 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
 
         try {
           // Group items by supplier
-          const itemsBySupplier: Record<string, OrderItem[]> = {};
-          
-          orderItems.forEach(item => {
-            if (!itemsBySupplier[item.supplier]) {
-              itemsBySupplier[item.supplier] = [];
-            }
-            itemsBySupplier[item.supplier].push(item);
-          });
+          const itemsBySupplier = supplierOrderGroups(orderItems);
           
           // Create separate purchase orders for each supplier
-          const newOrders: PurchaseOrder[] = Object.entries(itemsBySupplier).map(([supplierName, items]) => {
+          const newOrders: PurchaseOrder[] = itemsBySupplier.map(({ supplier: supplierName, data: items }) => {
             const supplier = state.suppliers.find(s => s.name === supplierName);
             // Chapter 2: prefer the first-class supplier record when one
             // matches the supplier TEXT (case/trim-insensitive).
@@ -910,53 +906,39 @@ export const useSupabaseInventoryStore = create<SupabaseInventoryState>()(
         currentStocktakeItems: state.currentStocktakeItems.filter(item => item.productId !== productId)
       })),
 
-      submitStocktake: async () => {
+      submitStocktake: async (retryPending = false) => {
         const state = get();
+        if (state.isLoading) throw new Error('Please wait for the current operation to finish.');
+        if (!state.isSupabaseEnabled || !state.isAuthenticated || !state.user?.id) {
+          throw new Error('Sign in and connect before saving a stocktake. Your draft has not been cleared.');
+        }
+        const userId = state.user.id;
         set({ isLoading: true, error: null });
-        
         try {
-          // Submit to Supabase if available
-          if (state.isSupabaseEnabled && state.isAuthenticated) {
-            await SupabaseService.createStocktake(state.currentStocktakeItems);
+          const pending = retryPending ? await pendingStocktake(userId) : null;
+          if (retryPending && !pending) throw new Error('There is no unfinished save for this account.');
+          const items = pending?.items || state.currentStocktakeItems;
+          if (pending && !get().currentStocktakeItems.length && get().user?.id === userId) {
+            set({ currentStocktakeItems: pending.items });
           }
-          
-          // Update product quantities based on stocktake
-          const updatedProducts = state.products.map(product => {
-            const stocktakeItem = state.currentStocktakeItems.find(item => item.productId === product.id);
-            if (stocktakeItem) {
-              const newStock = stocktakeItem.actualQuantity;
-              const updatedProduct = {
-                ...product,
-                currentStock: newStock
-              };
-              
-              // Update in Supabase if available
-              if (state.isSupabaseEnabled && state.isAuthenticated) {
-                SupabaseService.updateProduct(product.id, {
-                  currentStock: newStock
-                }).catch(error => {
-                  console.error('Failed to update product stock in Supabase:', error);
-                });
-              }
-              
-              return updatedProduct;
-            }
-            return product;
-          });
-          
+          await saveStocktakeAtomically(userId, items);
+          if (get().user?.id !== userId) return;
+          // Clear only the submitted draft. Preserve edits made while saving.
+          const current = get().currentStocktakeItems;
+          const sameDraft = current.length > 0 && JSON.stringify(stocktakePayload(current)) === JSON.stringify(stocktakePayload(items));
           set({
-            products: updatedProducts,
-            currentStocktakeItems: [],
+            currentStocktakeItems: sameDraft ? [] : current,
             isLoading: false,
-            lastSyncTime: new Date().toISOString()
+            lastSyncTime: new Date().toISOString(),
           });
+          // Read authoritative counts; a retry may refer to an older completed
+          // stocktake and must never overwrite newer local counts with its values.
+          await get().loadProducts();
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Failed to submit stocktake';
-          set({ error: errorMessage, isLoading: false });
+          if (get().user?.id === userId) set({ error: error instanceof Error ? error.message : 'Stocktake save failed', isLoading: false });
           throw error;
         }
       },
-      
       setError: (error) => set({ error }),
       
       clearAllData: async () => {

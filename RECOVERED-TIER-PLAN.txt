@@ -1,0 +1,38 @@
+RECOVERED TIER PLAN — 15 November 2026
+Source: ChatGPT chat "Rork SmartStock progress", 25 August 2025,
+https://chatgpt.com/c/68abd706-b3a0-8321-b3d3-201bc70f4f83
+User asked how new businesses manage stock and multiple users access a sellable SME app.
+The assistant proposed the following (historical proposal, not proof of final approval):
+Starter: 1 organisation, up to 5 users, 2,000 products, $49–79/month.
+Team: 1 organisation, up to 20 users, 10,000 products, $149–199/month.
+Pro: multi-organisation, SSO, audit logs, API access, $399+/month.
+14-day trial, preferably no credit card. Prices/limits are not validated or activated.
+Roles proposed: Owner (billing/plans/business deletion/all access), Admin (users
+except Owner, products/suppliers/POs/reports), Manager (products/suppliers/counts/
+POs/reports), Staff (scan/cart/counts/submit for approval/limited data).
+The same reply inconsistently also described staff submitting orders without
+approval. Approval behavior therefore remains unresolved; do not claim agreement.
+
+CURRENT USER DIRECTION
+Build framework suitable for tiered plans and multiple businesses; do not lock
+architecture to one business per login. Preserve existing implementation and data.
+Keep subscription entitlements separate from member permissions. A higher paid
+plan must never grant an unauthorized user access to another business.
+Prepare configurable plan/limit data and business-scoped memberships. No billing,
+SSO/API implementation or production migration is authorized by recovering this
+old proposal. Current chapter roadmap remains authority over superseded old
+suggestions such as compulsory receiving, alerts or server-side email delivery.
+
+Remaining narrow decision: whether Staff submits for approval or can share POs
+immediately. Can support a business-level policy later; no active default chosen.
+15 NOVEMBER OWNER DIRECTION — SME-SIZED TIERS
+User corrected the old proposed limits: target small businesses, not larger
+companies that likely already have inventory software. Starting examples:
+- Entry plan: 1 user, 250 products.
+- Next plan: 2 users, 500 products.
+These are provisional examples (user said "maybe"), not final billing limits.
+Keep plan limits configurable. Higher tier sizes, names and prices remain unset.
+Multi-business-capable foundation remains useful, but enterprise features such
+as SSO/API are not current implementation priorities. Focus on simple onboarding,
+ordering, stocktakes and small-team access. Do not reinstate the old 5/20-user
+and 2,000/10,000-product proposals as defaults.

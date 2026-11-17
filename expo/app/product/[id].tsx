@@ -1,5 +1,6 @@
+import { printBrowserQrLabel } from '@/services/browserQrLabelService';
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Edit, ShoppingBag, ClipboardList, Printer, Share, AlertTriangle } from 'lucide-react-native';
 import { effectiveStockUnit, effectiveUnitsPerOrderUnit, formatOrderQuantity, purchasingCostParts, purchasingProblem, unitPriceLabel } from '@/utils/purchasing';
@@ -9,72 +10,8 @@ import QuantityInput from '@/components/QuantityInput';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 
-const QRCodeComponent = ({ value, size = 200, colors }: { value: string; size?: number; colors: any }) => {
-  // Use external QR code service for both web and mobile for better compatibility
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size-20}x${size-20}&data=${encodeURIComponent(value)}&bgcolor=${colors.background.replace('#', '')}&color=${colors.text.replace('#', '')}`;
-  
-  if (Platform.OS === 'web') {
-    return (
-      <View style={{
-        width: size,
-        height: size,
-        backgroundColor: colors.background,
-        padding: 10,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: colors.border,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        <img 
-          src={qrUrl} 
-          alt={`QR Code for ${value}`}
-          style={{
-            width: size - 20,
-            height: size - 20,
-            objectFit: 'contain'
-          }}
-        />
-      </View>
-    );
-  }
-  
-  // Mobile implementation using expo-image for better compatibility
-  return (
-    <View style={{
-      width: size,
-      height: size,
-      backgroundColor: colors.background,
-      padding: 10,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-    }}>
-      <View style={{
-        width: size - 20,
-        height: size - 20,
-        backgroundColor: colors.lightGray,
-        borderRadius: 4,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: colors.border,
-      }}>
-        <Text style={{
-          color: colors.text,
-          fontSize: 10,
-          textAlign: 'center',
-          fontFamily: 'monospace',
-          padding: 8,
-        }}>
-          QR: {value}
-        </Text>
-      </View>
-    </View>
-  );
-};
+import ProductQrCode from '@/components/ProductQrCode';
+import { shareProductQrLabel } from '@/services/qrLabelService';
 
 export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -83,6 +20,7 @@ export default function ProductDetailsScreen() {
   const { products, addToOrder, addToStocktake } = useInventoryStore();
   const [orderQuantity, setOrderQuantity] = useState(1);
   const [stocktakeQuantity, setStocktakeQuantity] = useState(0);
+  const [isPreparingQr, setIsPreparingQr] = useState(false);
 
   const product = products.find(p => p.id === id);
 
@@ -109,113 +47,18 @@ export default function ProductDetailsScreen() {
   };
 
   const handlePrintQR = async () => {
+    if (isPreparingQr) return;
+    setIsPreparingQr(true);
     try {
       if (Platform.OS === 'web') {
-        // Web printing with shelf label format
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write(`
-            <html>
-              <head>
-                <title>QR Code Label - ${product.name}</title>
-                <style>
-                  @media print {
-                    @page {
-                      margin: 10mm;
-                      size: A4;
-                    }
-                  }
-                  body { 
-                    font-family: Arial, sans-serif;
-                    margin: 0;
-                    padding: 20px;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    min-height: 100vh;
-                  }
-                  .qr-label {
-                    width: 60mm;
-                    height: 40mm;
-                    border: 2px solid #000;
-                    padding: 5mm;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    text-align: center;
-                    box-sizing: border-box;
-                  }
-                  .qr-code {
-                    width: 30mm;
-                    height: 30mm;
-                    border: 1px solid #ccc;
-                    margin-bottom: 2mm;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 8px;
-                    background: #f9f9f9;
-                  }
-                  .product-name {
-                    font-size: 10px;
-                    font-weight: bold;
-                    margin-bottom: 1mm;
-                    line-height: 1.1;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                    width: 100%;
-                  }
-                  .product-sku {
-                    font-size: 8px;
-                    color: #666;
-                    margin-bottom: 1mm;
-                  }
-                  .product-barcode {
-                    font-size: 7px;
-                    color: #888;
-                    font-family: monospace;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                    width: 100%;
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="qr-label">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=113x113&data=${encodeURIComponent(product.barcode)}&bgcolor=ffffff&color=000000" alt="QR Code for ${product.barcode}" style="width: 30mm; height: 30mm; margin-bottom: 2mm;" />
-                  <div class="product-name">${product.name}</div>
-                  <div class="product-sku">${product.sku}</div>
-                  <div class="product-barcode">${product.barcode}</div>
-                </div>
-              </body>
-            </html>
-          `);
-          printWindow.document.close();
-          printWindow.print();
-        }
+        await printBrowserQrLabel(product);
       } else {
-        // Mobile sharing
-        const qrData = `Product: ${product.name}\nSKU: ${product.sku}\nBarcode: ${product.barcode}\nCategory: ${product.category}`;
-        
-        const fileUri = FileSystem.documentDirectory + `qr-${product.sku}.txt`;
-        await FileSystem.writeAsStringAsync(fileUri, qrData);
-        
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: 'text/plain',
-            dialogTitle: `Share QR Code for ${product.name}`,
-          });
-        } else {
-          Alert.alert('Sharing not available', 'Sharing is not available on this device.');
-        }
+        await shareProductQrLabel(product);
       }
     } catch (error) {
       console.error('Print/Share error:', error);
-      Alert.alert('Error', 'Failed to print/share QR code');
-    }
+      Alert.alert('QR label unavailable', error instanceof Error ? error.message : 'Failed to prepare QR label');
+    } finally { setIsPreparingQr(false); }
   };
 
   const handleShareProduct = async () => {
@@ -378,6 +221,11 @@ export default function ProductDetailsScreen() {
             </View>
 
             {/* Order Section */}
+            {product.desiredStockAvailable && <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push(`/product/guidance/${product.id}`)}>
+              <Text style={{ color: colors.background }}>Optional stock guidance: {product.desiredStockEnabled ? 'On' : 'Off'}</Text>
+            </TouchableOpacity>}
             <View style={[styles.section, { borderColor: colors.border }]}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Add to Order</Text>
               <QuantityInput
@@ -429,8 +277,12 @@ export default function ProductDetailsScreen() {
                   <TouchableOpacity 
                     style={[styles.qrActionButton, { backgroundColor: colors.lightGray }]}
                     onPress={handlePrintQR}
+                    disabled={isPreparingQr}
+                    accessibilityRole="button"
+                    accessibilityLabel={isPreparingQr ? 'Preparing QR label' : 'Print or share QR label'}
+                    accessibilityState={{ busy: isPreparingQr, disabled: isPreparingQr }}
                   >
-                    <Printer size={16} color={colors.primary} />
+                    {isPreparingQr ? <ActivityIndicator size="small" color={colors.primary} /> : <Printer size={16} color={colors.primary} />}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -438,7 +290,7 @@ export default function ProductDetailsScreen() {
                 Scan this QR code to quickly access this product
               </Text>
               <View style={styles.qrContainer}>
-                <QRCodeComponent value={product.barcode} colors={colors} />
+                <ProductQrCode key={product.barcode} value={product.barcode} />
               </View>
               <Text style={[styles.qrCodeText, { color: colors.inactive }]}>
                 Code: {product.barcode}

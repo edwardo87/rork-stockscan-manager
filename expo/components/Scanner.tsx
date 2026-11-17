@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Keyboard, Platform } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Plus, Minus, ShoppingBag, ArrowLeft, Eye } from 'lucide-react-native';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useRouter } from 'expo-router';
 import { Product } from '@/types/inventory';
+import { effectiveStockUnit, purchasingCostLabel, purchasingProblem } from '@/utils/purchasing';
+import { parseOrderQuantity, recentProductOrder } from '@/utils/orderReview';
+import { formatDate } from '@/utils/dateUtils';
+import { parsePhysicalCount, suggestedOrder } from '@/utils/stockGuidance';
 
 interface ScannerProps {
   onClose: () => void;
@@ -17,11 +21,16 @@ export default function Scanner({ onClose, onBarcodeScan, mode = 'order' }: Scan
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  const [quantityText, setQuantityText] = useState('1');
+  const quantity = parseOrderQuantity(quantityText);
   const [scannedProduct, setScannedProduct] = useState<Product | null>(null);
+  const [lastAdded, setLastAdded] = useState<string | null>(null);
+  const [physicalCountText, setPhysicalCountText] = useState('');
   const { colors } = useThemeStore();
-  const { getProductByBarcode } = useInventoryStore();
+  const { getProductByBarcode, purchaseOrders } = useInventoryStore();
   const router = useRouter();
+  const recentOrder = scannedProduct ? recentProductOrder(purchaseOrders, scannedProduct.id) : null;
+  const suggestion = scannedProduct ? suggestedOrder(scannedProduct, parsePhysicalCount(physicalCountText)) : null;
 
   if (!permission) {
     return <View />;
@@ -37,6 +46,9 @@ export default function Scanner({ onClose, onBarcodeScan, mode = 'order' }: Scan
         >
           <Text style={[styles.permissionButtonText, { color: colors.background }]}>Grant Access</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.scanAgainButton} onPress={onClose}>
+          <Text style={{ color: colors.primary }}>Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -47,6 +59,7 @@ export default function Scanner({ onClose, onBarcodeScan, mode = 'order' }: Scan
       const product = getProductByBarcode(data);
       
       if (product) {
+        setPhysicalCountText('');
         setScannedProduct(product);
         setError(null);
       } else {
@@ -60,33 +73,40 @@ export default function Scanner({ onClose, onBarcodeScan, mode = 'order' }: Scan
   };
 
   const handleQuantityChange = (increment: number) => {
-    setQuantity(prev => Math.max(1, prev + increment));
+    setQuantityText(String(Math.max(1, Math.round(((quantity ?? 0) + increment) * 10000) / 10000)));
   };
 
   const handleAddToOrder = () => {
     if (scannedProduct) {
       if (mode === 'order') {
+        if (quantity == null) return;
+        Keyboard.dismiss();
         onBarcodeScan(scannedProduct.barcode, quantity);
+        setLastAdded(`Added ${quantity} ${scannedProduct.orderUnit || effectiveStockUnit(scannedProduct)} of ${scannedProduct.name}. Scan the next item.`);
       } else {
         onBarcodeScan(scannedProduct.barcode);
       }
       // Reset for next scan
       setScanned(false);
       setScannedProduct(null);
-      setQuantity(1);
+      setQuantityText('1');
       setError(null);
     }
   };
 
   const handleViewProduct = () => {
     if (scannedProduct) {
+      Keyboard.dismiss();
       onClose();
       router.push(`/product/${scannedProduct.id}`);
     }
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <CameraView
         style={styles.camera}
         facing="back"
@@ -106,34 +126,70 @@ export default function Scanner({ onClose, onBarcodeScan, mode = 'order' }: Scan
         
         <TouchableOpacity 
           style={[styles.exitButton, { backgroundColor: colors.primary }]} 
-          onPress={onClose}
+          onPress={() => { Keyboard.dismiss(); onClose(); }}
         >
           <ArrowLeft size={20} color={colors.background} />
-          <Text style={[styles.exitButtonText, { color: colors.background }]}>See Order</Text>
+          <Text style={[styles.exitButtonText, { color: colors.background }]}>{mode === 'order' ? 'See Order' : 'Done'}</Text>
         </TouchableOpacity>
         
         {!scanned ? (
           <View style={styles.guideTextContainer}>
-            <Text style={styles.guideText}>Position barcode in frame</Text>
+            <Text style={styles.guideText} accessibilityLiveRegion="polite">
+              {lastAdded || 'Position barcode in frame'}
+            </Text>
           </View>
         ) : scannedProduct ? (
-          <View style={[styles.productContainer, { 
+          <ScrollView style={[styles.productContainer, {
             backgroundColor: colors.background,
             shadowColor: colors.text,
-          }]}>
+          }]} contentContainerStyle={styles.productContent} keyboardShouldPersistTaps="handled">
             <Text style={[styles.productTitle, { color: colors.text }]}>{scannedProduct.name}</Text>
-            <Text style={[styles.productCode, { color: colors.inactive }]}>Code: {scannedProduct.barcode}</Text>
+            <Text style={[styles.productCode, { color: colors.inactive }]}>Supplier: {scannedProduct.supplier || 'Not set'}</Text>
+            <Text style={[styles.productCode, { color: colors.inactive }]}>Supplier code: {scannedProduct.supplierCode || scannedProduct.sku || 'Not set'}</Text>
+            <Text style={[styles.productCode, { color: colors.inactive }]}>Barcode: {scannedProduct.barcode}</Text>
+            {mode === 'order' && (
+              <View style={styles.purchasingDetails}>
+                <Text style={{ color: colors.text }}>Order unit: {scannedProduct.orderUnit || effectiveStockUnit(scannedProduct)}</Text>
+                <Text style={{ color: colors.inactive }}>
+                  Pack quantity: {scannedProduct.unitsPerOrderUnit != null && scannedProduct.unitsPerOrderUnit > 0
+                    ? `${scannedProduct.unitsPerOrderUnit.toLocaleString()} ${effectiveStockUnit(scannedProduct)}`
+                    : 'Not recorded'}
+                </Text>
+                {!!purchasingCostLabel(scannedProduct) && (
+                  <Text style={{ color: colors.text }}>Supplier cost (ex GST): {purchasingCostLabel(scannedProduct)}</Text>
+                )}
+                {!!purchasingProblem(scannedProduct) && (
+                  <Text style={{ color: colors.error }}>{purchasingProblem(scannedProduct)}. Correct purchasing details before submitting the order.</Text>
+                )}
+                <Text style={{ color: colors.text, fontWeight: '600' }}>Recent ordering</Text>
+                <Text style={{ color: colors.inactive }}>
+                  {recentOrder
+                    ? `Latest available PO: ${formatDate(new Date(recentOrder.date))} · ${recentOrder.reference}\n${recentOrder.quantities.join(' + ')}`
+                    : 'No order history available for this product.'}
+                </Text>
+                <Text style={{ color: colors.inactive }}>Order again whenever needed.</Text>
+              </View>
+            )}
             
-            <View style={styles.quantityControls}>
+            {mode === 'order' && <View style={styles.quantityControls}>
               <TouchableOpacity 
                 style={[styles.quantityButton, { backgroundColor: colors.lightGray }]} 
                 onPress={() => handleQuantityChange(-1)}
-                disabled={quantity <= 1}
+                disabled={quantity == null || quantity <= 1}
               >
-                <Minus size={20} color={quantity <= 1 ? colors.inactive : colors.text} />
+                <Minus size={20} color={quantity == null || quantity <= 1 ? colors.inactive : colors.text} />
               </TouchableOpacity>
               
-              <Text style={[styles.quantityText, { color: colors.text }]}>{quantity}</Text>
+              <TextInput
+                style={[styles.quantityText, { color: colors.text, borderBottomColor: colors.border, borderBottomWidth: 1 }]}
+                value={quantityText}
+                onChangeText={setQuantityText}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                selectTextOnFocus
+                accessibilityLabel="Quantity in order units"
+              />
               
               <TouchableOpacity 
                 style={[styles.quantityButton, { backgroundColor: colors.lightGray }]} 
@@ -141,11 +197,28 @@ export default function Scanner({ onClose, onBarcodeScan, mode = 'order' }: Scan
               >
                 <Plus size={20} color={colors.text} />
               </TouchableOpacity>
-            </View>
+            </View>}
+            {mode === 'order' && scannedProduct.desiredStockAvailable && scannedProduct.desiredStockEnabled && <View style={styles.purchasingDetails}>
+              <Text style={{ color: colors.text }}>Optional: counted now ({effectiveStockUnit(scannedProduct)})</Text>
+              <TextInput value={physicalCountText} onChangeText={setPhysicalCountText} keyboardType="decimal-pad"
+                accessibilityLabel="Fresh physical count for suggestion" placeholder="Enter a fresh count" placeholderTextColor={colors.inactive}
+                style={{ padding: 12, borderWidth: 1, borderColor: colors.border, color: colors.text, borderRadius: 8 }} />
+              <Text style={{ color: colors.inactive }}>Desired: {scannedProduct.desiredStockQuantity} {effectiveStockUnit(scannedProduct)}. This count is only used for this suggestion; it is not saved as a stocktake.</Text>
+              {suggestion == null ? <Text style={{ color: colors.inactive }}>A valid fresh count and confirmed pack quantity are needed for a suggestion. Manual ordering is always available.</Text>
+                : <>
+                  <Text style={{ color: colors.text }}>Suggested: {suggestion} {scannedProduct.orderUnit || effectiveStockUnit(scannedProduct)} (rounded up to whole order units).</Text>
+                  {suggestion > 0 && <TouchableOpacity style={styles.scanAgainButton} onPress={() => { setQuantityText(String(suggestion)); Keyboard.dismiss(); }}>
+                    <Text style={{ color: colors.primary }}>Use suggestion</Text>
+                  </TouchableOpacity>}
+                  <Text style={{ color: colors.inactive }}>You can still enter any required order quantity above.</Text>
+                </>}
+            </View>}
+            {mode === 'order' && quantity == null && <Text style={{ color: colors.error, marginBottom: 12 }}>Enter a quantity greater than zero (up to four decimal places).</Text>}
             
             <View style={styles.buttonContainer}>
               <TouchableOpacity 
-                style={[styles.addButton, { backgroundColor: colors.primary }]}
+                style={[styles.addButton, { backgroundColor: colors.primary, opacity: mode === 'order' && quantity == null ? 0.5 : 1 }]}
+                disabled={mode === 'order' && quantity == null}
                 onPress={handleAddToOrder}
               >
                 <ShoppingBag size={20} color={colors.background} />
@@ -168,17 +241,18 @@ export default function Scanner({ onClose, onBarcodeScan, mode = 'order' }: Scan
             <TouchableOpacity 
               style={[styles.scanAgainButton, { borderColor: colors.border }]}
               onPress={() => {
+                Keyboard.dismiss();
                 setScanned(false);
                 setScannedProduct(null);
-                setQuantity(1);
+                setQuantityText('1');
               }}
             >
               <Text style={[styles.scanAgainText, { color: colors.primary }]}>Scan Another</Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         ) : null}
       </CameraView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -255,13 +329,21 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 24,
+    maxHeight: '70%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     elevation: 8,
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
+  },
+  productContent: {
+    padding: 24,
+  },
+  purchasingDetails: {
+    gap: 6,
+    marginTop: 8,
+    marginBottom: 16,
   },
   productTitle: {
     fontSize: 20,
@@ -270,7 +352,7 @@ const styles = StyleSheet.create({
   },
   productCode: {
     fontSize: 14,
-    marginBottom: 20,
+    marginBottom: 4,
   },
   quantityControls: {
     flexDirection: 'row',

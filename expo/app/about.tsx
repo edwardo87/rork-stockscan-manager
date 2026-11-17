@@ -86,21 +86,24 @@ export default function AboutScreen() {
                 🔹 Scan & Reorder with QR / Barcodes
               </Text>
               <Text style={[styles.bulletPoint, { color: colors.primary }]}>
-                🔹 Cloud Sync Across Devices
+                🔹 Online Access to Saved Products and Orders
               </Text>
               <Text style={[styles.bulletPoint, { color: colors.primary }]}>
-                🔹 Live Stock Levels & Alerts
+                🔹 Periodic Stocktakes with Saved Count History
               </Text>
               <Text style={[styles.bulletPoint, { color: colors.primary }]}>
-                🔹 Offline-First Architecture
+                🔹 Supplier Catalogue Review and Import
               </Text>
               <Text style={[styles.bulletPoint, { color: colors.primary }]}>
-                🔹 Clean, Fast, Reliable UI
+                🔹 Purchase Order PDFs and Sharing
               </Text>
             </View>
           </View>
 
           {/* Founder's Note */}
+          <Text style={[styles.description, { color: colors.inactive }]}>
+            Internet access is needed to load and save cloud records. Stock figures reflect recorded counts; SmartStock does not continuously track usage or send automatic stock alerts. Creating an order does not change physical stock.
+          </Text>
           <View style={[styles.quoteContainer, { backgroundColor: colors.lightGray }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Founder&apos;s Note

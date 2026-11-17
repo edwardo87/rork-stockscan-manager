@@ -1,3 +1,4 @@
+import { createInvalidatableCache } from '@/utils/invalidatableCache';
 import { supabase, getCurrentUser, isSupabaseConfigured } from '@/lib/supabase';
 import { BusinessProfile } from '@/types/inventory';
 
@@ -74,29 +75,15 @@ export async function fetchBusinessProfile(): Promise<BusinessProfile | null> {
   return business ? rowToProfile(business) : null;
 }
 
-// --- Small TTL cache so PDF/email flows don't re-query per document -------
-const CACHE_TTL_MS = 60_000;
-let cache: { profile: BusinessProfile | null; loadedAt: number } | null = null;
+// Invalidation prevents an old account request from repopulating PDF/email data.
+const profileCache = createInvalidatableCache(fetchBusinessProfile, 60_000);
+export function clearBusinessProfileCache(): void { profileCache.clear(); }
 
-export function clearBusinessProfileCache(): void {
-  cache = null;
-}
-
-/**
- * Cached, non-throwing profile lookup for PDF/email flows. Returns null when
- * the user has no profile or the lookup fails — callers fall back gracefully.
- */
 export async function getCachedBusinessProfile(): Promise<BusinessProfile | null> {
-  if (cache && Date.now() - cache.loadedAt < CACHE_TTL_MS) {
-    return cache.profile;
-  }
   try {
-    const profile = await fetchBusinessProfile();
-    cache = { profile, loadedAt: Date.now() };
-    return profile;
+    return await profileCache.get();
   } catch (error) {
     console.warn('[BusinessProfile] lookup failed, continuing without it:', error);
-    cache = { profile: null, loadedAt: Date.now() };
     return null;
   }
 }

@@ -38,9 +38,8 @@ export interface POData {
  * email flow and the Order History screen so the reference shown in history
  * always exactly matches the reference on the generated/emailed PO.
  */
-export function getPoNumber(id: string): string {
-  return `PO-${String(id).slice(-4).padStart(4, '0')}`;
-}
+import { getPoNumber } from '@/utils/orderReview';
+export { getPoNumber } from '@/utils/orderReview';
 
 /**
  * Escapes user-profile text for safe embedding in the PDF HTML.

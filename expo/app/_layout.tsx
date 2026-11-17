@@ -154,7 +154,7 @@ function RootLayoutNav() {
         <Stack.Screen 
           name="po-preview" 
           options={{ 
-            title: "PO Preview",
+            title: "Order History",
             presentation: "card",
           }} 
         />

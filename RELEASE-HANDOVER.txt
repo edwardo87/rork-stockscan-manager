@@ -1,0 +1,130 @@
+SMART STOCK RELEASE HANDOVER — 15 November 2026
+Status: local development checkpoint, NOT a launch approval.
+
+SOURCE OF TRUTH
+code/ on codex/holiday-builds. Upstream HEAD checked today: f15e8ca.
+Local changes have not been pushed or synced into Rork. Preserve this branch.
+Do not develop the same feature in Rork concurrently or blindly overwrite it.
+Chapters 1–4 owner sign-offs and deployed Chapter3 migration remain accepted;
+no repeat KJ catalogue correction is required.
+
+PREPARED IMPLEMENTATION
+Chapter5: purchasing details/recent order scan card, quantity entry, rapid scan
+flow and grouped supplier review. Existing PO history/export reused.
+Chapter6: stocktake history/CSV export, durable retry and atomic save, optional
+physical-count-based guidance. Two SQL migrations remain NOT deployed.
+Chapter7 slices: native QR images, single/batch embedded-image PDF labels,
+browser image-readiness handling, accurate help and normal Settings cleanup.
+Account safety: business-profile cache invalidation now drops delayed responses
+from prior sessions rather than allowing stale business details into PO lookups.
+
+TEST EVIDENCE AND LIMITS
+See PLAN.md and AUTOMATION-STATE.txt for per-change checks. Chapter5/pricing,
+stocktake retry/export, QR generation/readiness/batch and TypeScript checks passed
+in the corresponding change sessions. Local PostgreSQL tests used restored public
+schema plus synthetic data and stub auth: rollback, ownership, stale counts,
+concurrent retry and guidance constraints passed. They do not prove hosted auth.
+Business cache test simulates account change while a prior lookup is pending.
+QR tests use synthetic PNG-shaped data; physical rendering/scanning is unverified.
+Full web export previously hit EPERM writing output; not a successful web release.
+No production orders/emails were generated during this development.
+
+DEPLOYMENT ORDER — ATTENDED, NOT EXECUTED
+1. Agree the release scope. Shared staff access/invitations are NOT implemented.
+   A single-owner trial is a scope decision, not completion of Chapter7.
+2. Reconcile this branch with current upstream; review diff, integrate intentionally
+   and revalidate affected code. Establish which checkout Rork/Expo will build.
+3. Confirm the target Supabase project and current schema/policies. The prepared
+   chapter6-release-preflight.sql is READ ONLY inspection, not migration deployment.
+   No rows for the new function/columns means missing prerequisites, not failure
+   of the inspection. Existing partial objects require inspection before applying.
+4. Take and verify a FRESH backup, review CHAPTER6-DEPLOYMENT-NOTES.txt, compare
+   current RLS/grants with local test assumptions, and test any schema differences.
+5. Deploy chapter6-atomic-stocktake.sql BEFORE releasing this app. Expected:
+   stocktakes.submission_payload jsonb; save_stocktake_v1(uuid,jsonb), SECURITY
+   INVOKER, authenticated execute allowed, anonymous denied, existing RLS enabled.
+   Missing RPC preserves pending counts but prevents saving in this new app.
+6. Optional guidance: chapter6-guidance-migration.sql adds opted-out product fields.
+   This is independent of atomic saving; confirm false/null defaults and constraints.
+7. Verify row counts/ownership/purchasing/count values unchanged, then run focused
+   hosted/device checks. Never rerun ADD COLUMN migrations blindly.
+8. Confirm Expo account/build ownership, app identity, signing and release channel.
+   app.json currently identifies StockScan Manager / app.rork.stockscan-manager;
+   do not rename package IDs casually. Rork-to-Edward preview ownership is unresolved.
+9. Publish only after explicit release approval and the chosen acceptance checks.
+Rollback: preserve prior app release. Do not drop populated columns or replay old
+stock counts as a rollback; use a reviewed corrective plan for schema problems.
+
+ONE CONSOLIDATED PARKED LIST
+A. Shared staff design: who can invite/remove staff; which staff can edit catalogue,
+   business/suppliers, create POs, count stock, or delete records; whether one login
+   can belong to multiple businesses. Existing ownership is user-scoped, so this
+   needs a coordinated schema/RLS/service design and migration, not just an invite UI.
+B. Attended production database deployment and credential entry as above.
+C. Integration/push into the release source and signing/Expo ownership/access.
+D. Phone acceptance below. E. Commercial launch/trial structure remains undecided.
+
+FOCUSED PHONE ACCEPTANCE — ONLY NEW/UNRESOLVED BEHAVIOUR
+- Fresh account: sign in, business setup and stock loading; record any failure.
+- Ordering: fast repeated scans, decimal input/keyboard, two-supplier review,
+  create/reopen test POs, inspect correct business/supplier/unit/price PDF details.
+  Sending a real supplier email is not required for preview acceptance.
+- Account switch: ensure business information and product/order lists are those
+  of the new account; do not use a production supplier recipient for checks.
+- Stocktake after migration: zero/decimal counts, save/history/CSV, interrupted
+  response then retry/restart, no duplicate session and no partial product updates.
+- Guidance if deployed: opt in one test product, fresh physical count, suggested
+  whole order quantity, manual override, disable and confirm ordinary ordering.
+- QR: single/batch PDF layout, long names, print sample and scan exact product;
+  disconnected preparation shows an error and never shares a blank/partial sheet.
+- Record onboarding time, ordering-round time and support needed during real beta
+  use. Do not invent measurements from automated test durations.
+
+INDEPENDENT NEXT WORK
+Latest iOS Hermes bundle PASSED: validation/ios-release-nov15-cjs, 7.6MB hbc. Initial attempt failed on Supabase ESM optional telemetry import(); native Metro resolver now uses the installed CommonJS entry. Native resolver/query-builder smoke checks PASS without network. Real authentication/phone checks still required.
+Shared-access design can be prepared as a proposal, but implementing permissions
+without the parked decisions would invent access policy. No claim all work is done.
+Additional checks: Android export blocked before compilation by EBUSY reading the local Hermes Babel plugin. No Android build success claimed. See CHAPTER7-SHARED-ACCESS-PROPOSAL.txt for the grounded implementation sequence and acceptance matrix awaiting access-policy decisions.
+
+15 November follow-up: Android Hermes export PASSED using Node instead of Bun; artifact validation/android-release-node-nov15, 7.9MB hbc. This resolves the prior EBUSY build attempt. Local database preflight execution remains unverified: postgres role NOLOGIN, edbel role absent; no roles changed and test server stopped. Phone checks remain separate.
+
+17 NOVEMBER VERIFIED UPDATE (supersedes stale blockers above)
+Prepared/tested additive Chapter7 membership and configurable SME plan foundation;
+see CHAPTER7-FOUNDATION-NOTES.txt. Read-only adapter remains inactive in UI.
+Business access and SME capacity tests PASS, including cancellation during auth.
+Local Chapter6 preflight was successfully exercised before/after migration in a
+separate known-login disposable cluster. The old local-login blocker is resolved.
+Ported incoming upstream invalid-refresh-token recovery with web/SSR guard and
+local-only signout; exact auth/error deduplication/retry tests and TypeScript PASS.
+No assumption that a database pause caused the token error.
+Upstream HEAD checked: 7d8c46715bfda0ee596c001d75a0d550d7bcf6b4.
+Incoming toolkit0.4.2 reviewed in an isolated downloaded package; Metro changes
+are small, but AI dependencies change major versions. Not integrated yet.
+Web Node export failed EBUSY reading a dependency under OneDrive. Isolated source
+copy outside OneDrive created at LOCALAPPDATA/SmartStockValidation/nov17-toolkit042.
+Frozen-lock installation reported success but left Expo and TypeScript package
+directories empty. Physical-copy/force retry did the same. Both attempts parked;
+no claim isolated build passed. Working checkout dependencies remain unchanged.
+Multi-business architecture IS decided; remove it from pending user questions.
+Remaining choices are specific staff powers/PO approval and commercial pricing.
+No production migration, push, purchase, order sending or device acceptance.
+
+17 NOVEMBER FINAL DEVELOPMENT CHECKPOINT
+Added prepared server caps for members/products; real two-session races pass at
+READ COMMITTED and REPEATABLE READ, plus bulk rollback and downgrade preservation.
+Added configurable staff capabilities with default denial, owner-only changes,
+cross-business isolation and revocation tests. New-business creator provisioning
+passes without inventing a plan or assigning unclaimed businesses.
+Prepared business-scoped stocktake retry journal; restart/identity/legacy-record
+preservation/cross-business and wrong-clear tests pass. Existing v1 stays active.
+Chapter7 read-only preflight reports RLS enabled, no direct client writes or anon
+reads, intended RPC grants only. Local PostgreSQL stopped cleanly.
+See CHAPTER7-FOUNDATION-NOTES.txt for dependencies and activation restrictions.
+This supersedes the earlier statement that quota/permission/bootstrap preparation
+was still missing. It does NOT mark shared staff access or a chapter accepted.
+Next independent work: business-scoped authorized read APIs (including explicit
+cost visibility), then scoped writes/invites and coordinated UI/journal rollout.
+No blanket staff-policy blocker: configurable permissions permit further work.
+Parked: SDK0.4.2 integration/empty install and web file locks; attended migrations,
+release source/signing, live auth and focused phone checks; final tier prices and
+staff defaults. No production change, upstream push, purchase or order sending.

@@ -21,13 +21,13 @@ const guideSteps: GuideStep[] = [
     description: 'Get your inventory into SmartStock',
     icon: Upload,
     steps: [
-      'Go to Settings → Import Products (CSV)',
-      'Export your existing stock list from Excel or Sheets as a CSV file',
-      'Select the CSV file to import all products at once',
+      'Go to Settings → Import Supplier Catalogue',
+      'Choose a supplier and a CSV, Excel or text-based PDF supplier document',
+      'Review selected products, purchasing units and any questions before approving the import',
       'Or manually add products in the Products tab',
       'Tap the + button to add new items',
       'Fill in product name, SKU, price, and current stock',
-      'Set minimum stock levels for low stock alerts'
+      'Supplier quantities are not your physical stock counts; use a stocktake to record those'
     ]
   },
   {
@@ -38,10 +38,10 @@ const guideSteps: GuideStep[] = [
     steps: [
       'Navigate to the Products tab',
       'Tap on any product card to view details',
-      'Tap "Edit Product" to modify information',
+      'Tap "Edit" to modify information',
       'Update price, current stock, minimum stock level',
       'Add or change product description',
-      'Save changes - they sync to the cloud automatically'
+      'Save while connected and check that saving succeeds before leaving the screen'
     ]
   },
   {
@@ -52,10 +52,30 @@ const guideSteps: GuideStep[] = [
     steps: [
       'Open any product from the Products tab',
       'Scroll down to see the QR code section',
-      'The QR code is automatically generated for each product',
-      'Use the Scanner tab to scan QR codes',
-      'Scanning will quickly open the product details',
-      'Perfect for warehouse or stockroom use'
+      'Stay connected to the internet while QR images load or labels are prepared',
+      'Use the product print action to prepare one label, or the Products print action to select several labels',
+      'On your phone, labels are shared as a PDF with the QR images included',
+      'Wait for preparation to finish; if it fails, check your connection and retry',
+      'In a browser, allow the label pop-up and wait for the images before printing',
+      'Print a sample and check that it scans to the correct product before printing a full batch',
+      'Use Scan in the Order or Stocktake tab',
+      'Use View Details on the scan card to open the product',
+      'Keep the printed code clear and readable; an internet connection is still needed to load and save cloud records'
+    ]
+  },
+  {
+    id: 'ordering-round',
+    title: 'Complete an Ordering Round',
+    description: 'Scan, review by supplier and prepare purchase orders',
+    icon: Package,
+    steps: [
+      'Open Order → Scan and scan a product label',
+      'Check supplier code, order unit, pack quantity and the latest available order',
+      'Enter the required quantity in order units, then tap Add to Order and continue scanning',
+      'Tap See Order to review items grouped by supplier',
+      'Correct any unresolved purchasing details before submitting',
+      'Submit creates separate supplier purchase orders; open History to review and share each one',
+      'Recent orders never prevent ordering again, and ordering does not increase physical stock'
     ]
   },
   {
@@ -65,11 +85,14 @@ const guideSteps: GuideStep[] = [
     icon: BarChart3,
     steps: [
       'Go to the Stocktake tab',
-      'Review all products listed',
+      'Scan the products you want to count',
       'Enter actual counted quantities',
       'Use the scanner to quickly find products',
       'Submit the stocktake when complete',
-      'Stock levels will be updated automatically'
+      'Saving updates recorded stock counts; it does not create an order',
+      'If a save is interrupted, use Retry unfinished save before starting another attempt',
+      'Open History & export to review a saved count and share its CSV spreadsheet',
+      'Historic counts keep the values saved at that time; they do not measure usage since then'
     ]
   },
   {
@@ -78,12 +101,12 @@ const guideSteps: GuideStep[] = [
     description: 'Configure email for purchase orders',
     icon: Mail,
     steps: [
-      'Ensure you have environment variables configured',
-      'Go to Settings → Test Environment to verify setup',
-      'When creating orders, you can email suppliers',
-      'Purchase orders are sent as PDF attachments',
-      'Email includes order details and company information',
-      'Track sent orders in the order history'
+      'Enter your company and delivery details in Settings → Business Profile',
+      'Set supplier ordering emails in Settings → Suppliers',
+      'Create an order, then open Order → History to review each supplier purchase order',
+      'On your phone, Email opens a draft with the PDF attached, or a share sheet when no mail app is configured',
+      'Review the recipient and attachment, then send using your chosen app',
+      'Order History records created orders; it is not proof of email delivery'
     ]
   },
   {
@@ -94,8 +117,8 @@ const guideSteps: GuideStep[] = [
     steps: [
       'Sign in with the same account on any device',
       'All inventory data is stored securely in the cloud',
-      'Changes sync automatically across devices',
-      'No manual backup needed',
+      'An internet connection is needed to load and save cloud records',
+      'Refresh the relevant screen to check for saved changes; cached counts may be older',
       'Log out anytime to switch accounts',
       'Your data stays private to your account'
     ]

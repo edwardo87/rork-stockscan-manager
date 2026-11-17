@@ -27,7 +27,8 @@ param(
     [switch]$Apply,
     [string]$PgBin = "C:\Program Files\PostgreSQL\17\bin",
     [string]$BackupDir = "backups",
-    [string]$MigrationFile = "chapter3-migration.sql"
+    [string]$MigrationFile = "chapter3-migration.sql",
+    [string]$ReportFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +62,8 @@ $DbUser = $env:SUPABASE_DB_USER; if (-not $DbUser) { $DbUser = Read-Host "Databa
 $DbPort = $env:SUPABASE_DB_PORT; if (-not $DbPort) { $DbPort = "5432" }
 $DbName = $env:SUPABASE_DB_NAME; if (-not $DbName) { $DbName = "postgres" }
 
+try {
+if ($ReportFile) { Set-Content -LiteralPath ($ReportFile + '.ready') -Value 'Waiting at hidden database password prompt; no database action has run.' }
 $sec = Read-Host "Database password (input hidden)" -AsSecureString
 $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
 $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
@@ -69,17 +72,41 @@ $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
 $DbHost = ($DbHost -split "`r?`n")[0].Trim(); $DbUser = ($DbUser -split "`r?`n")[0].Trim()
 $conn = "host=$DbHost port=$DbPort user=$DbUser dbname=$DbName sslmode=require"
 $psqlArgs = @($conn, "-X", "-v", "ON_ERROR_STOP=1", "-t", "-A", "-F", "|")
+$env:PGCONNECT_TIMEOUT = '15'
+$env:PGOPTIONS = '-c statement_timeout=120000 -c lock_timeout=10000'
+# Start the report only AFTER the password prompt; never record credentials.
+if ($ReportFile) { Start-Transcript -Path $ReportFile -NoClobber | Out-Null }
 
 Info "Testing connection..."
-$ver = & $psql @psqlArgs -c "select version();" 2>$null
+# Windows PowerShell treats native stderr as a terminating error under Stop.
+# Capture the diagnostic so a failed login is explained instead of disappearing.
+$taskPreviousPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = 'Continue'
+    $taskConnectionOutput = @(& $psql @psqlArgs -c "select version();" 2>&1)
+    $taskConnectionExit = $LASTEXITCODE
+} finally { $ErrorActionPreference = $taskPreviousPreference }
+if ($taskConnectionExit -ne 0) {
+    $taskDiagnostic = ($taskConnectionOutput | ForEach-Object { $_.ToString() }) -join "`n"
+    if ($env:PGPASSWORD) { $taskDiagnostic = $taskDiagnostic.Replace($env:PGPASSWORD, '[REDACTED]') }
+    Fail "Database connection failed: $taskDiagnostic"
+    Write-Host 'RESULT: FAIL - no backup or migration ran.'
+    exit 1
+}
+$ver = $taskConnectionOutput
 if ($LASTEXITCODE -eq 0 -and $ver) { Pass "Connected to Supabase ($($ver[0].Split(',')[0]))" }
 else { Fail "Could not connect - check host/user/password (password never leaves this session)"; Write-Host "`nRESULT: FAIL"; exit 1 }
 
 # ---- 3. Deployment state + pre-migration counts ------------------------------
 Section "Pre-flight state"
 $ch3 = & $psql @psqlArgs -c "select count(*) from information_schema.columns where table_schema='public' and table_name='products' and column_name='supplier_code';"
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect product migration state.' }
 $ch3items = & $psql @psqlArgs -c "select count(*) from information_schema.columns where table_schema='public' and table_name='order_items' and column_name='line_total';"
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect order migration state.' }
 $alreadyDeployed = ($ch3 -ge 1 -and $ch3items -ge 1)
+if ($alreadyDeployed -or $ch3 -ge 1 -or $ch3items -ge 1) {
+    throw 'Some Chapter 3 columns already exist. Stop for read-only review before applying anything.'
+}
 
 $countQuery = @"
 select 'products' t, count(*) from public.products
@@ -97,8 +124,10 @@ if ($LASTEXITCODE -ne 0) { Fail "Could not read table counts"; Write-Host "`nRES
 $countsBefore | ForEach-Object { Info "row count: $_" }
 # Chapter 2 compatibility: ownership triggers must still be in place.
 $triggers = & $psql @psqlArgs -c "select count(distinct tgrelid::regclass::text) from pg_trigger where tgname like '%business%' and not tgisinternal;"
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Chapter 2 triggers.' }
 if ($triggers -ge 1) { Pass "Chapter 2 business-ownership triggers present ($triggers table(s) guarded)" }
 else { Fail "Chapter 2 business-ownership triggers NOT found - STOP: resolve Chapter 2 first" }
+if ($script:failed) { throw 'Pre-flight failed. No migration will be run.' }
 
 # ---- 4. Backup ---------------------------------------------------------------
 Section "Backup (timestamped, never overwrites)"
@@ -122,11 +151,11 @@ $list = & $restore --list $backup 2>$null
 if ($LASTEXITCODE -ne 0) { Fail "pg_restore could not read the dump - backup is NOT restorable"; Write-Host "`nRESULT: FAIL"; exit 1 }
 $missing = @()
 foreach ($t in $expectedTables) {
-    if ($list -match "TABLE\s+$t\b") { Pass "dump contains table: $t" }
+    if (($list -match "TABLE\s+public\s+$t\s") -and ($list -match "TABLE DATA\s+public\s+$t\s")) { Pass "dump contains table definition and data entry: $t" }
     else { $missing += $t }
 }
 if ($missing.Count -gt 0) { Fail "dump missing expected tables: $($missing -join ', ')"; Write-Host "`nRESULT: FAIL"; exit 1 }
-Pass "Backup verified: readable and complete (pg_restore --list)"
+Pass "Backup archive readable; expected public table definitions and data entries present (not a test restore)"
 
 # ---- 6. Migration ------------------------------------------------------------
 Section "Chapter 3 migration"
@@ -142,7 +171,7 @@ elseif (-not $Apply) {
 }
 else {
     Write-Host "You have authorised the Chapter 3 migration with -Apply." -ForegroundColor Yellow
-    Write-Host "The verified backup at '$backup' will restore the database if anything goes wrong." -ForegroundColor Yellow
+    Write-Host "Backup saved at '$backup'. Archive checks passed; a full restore has not been tested." -ForegroundColor Yellow
     $confirm = Read-Host "Type DEPLOY to run the migration now (anything else cancels)"
     if ($confirm -cne "DEPLOY") {
         Info "Cancelled by user. No changes made. Backup kept at: $backup"
@@ -185,6 +214,7 @@ Check "Chapter 3 columns present on products" `
 # ---- 8. Record-count preservation --------------------------------------------
 Section "Existing data preserved"
 $countsAfter = @(& $psql @psqlArgs -c $countQuery)
+if ($LASTEXITCODE -ne 0) { throw 'Post-migration row counts could not be read.' }
 $preserveOk = $true
 foreach ($line in $countsBefore) {
     $parts = $line -split '\|', 2
@@ -209,4 +239,16 @@ else {
     Write-Host "PASS - existing data counts preserved; Chapter 2 structures intact" -ForegroundColor Green
     Write-Host "`nBackup file: $backup" -ForegroundColor Cyan
     exit 0
+}
+} catch {
+    $taskFailureMessage = $_.Exception.Message
+    if ($env:PGPASSWORD) { $taskFailureMessage = $taskFailureMessage.Replace($env:PGPASSWORD, '[REDACTED]') }
+    Write-Host "RESULT: FAIL - $taskFailureMessage" -ForegroundColor Red
+    exit 1
+} finally {
+    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    Remove-Item Env:PGCONNECT_TIMEOUT -ErrorAction SilentlyContinue
+    Remove-Item Env:PGOPTIONS -ErrorAction SilentlyContinue
+    if ($sec) { $sec.Dispose() }
+    if ($ReportFile) { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }
 }

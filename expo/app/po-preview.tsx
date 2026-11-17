@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
-import { ArrowLeft, FileText, Mail, Eye, Printer, Trash2 } from 'lucide-react-native';
+import { FileText, Mail, Eye, Printer, Trash2 } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
@@ -19,7 +18,6 @@ function poOrderTotal(order: { items: any[] }): number {
 }
 
 export default function POPreviewScreen() {
-  const router = useRouter();
   const { colors } = useThemeStore();
   const { purchaseOrders, suppliers, deletePurchaseOrder } = useInventoryStore();
   const isMountedRef = useRef(true);
@@ -257,16 +255,7 @@ export default function POPreviewScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => router.back()}
-        >
-          <ArrowLeft size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Order History</Text>
-      </View>
-
+      {/* Title and back come from the native Stack header ("Order History"). */}
       {sortedOrders.length > 0 ? (
         <ScrollView style={styles.content}>
           {sortedOrders.map((order, index) => (

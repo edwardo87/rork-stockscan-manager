@@ -1,0 +1,69 @@
+Chapter 6 stock guidance - prepared, NOT deployed
+
+History and CSV sharing use existing tables. They do not require this migration.
+Guidance adds desired_stock_enabled (false by default) and desired_stock_quantity.
+The app exposes settings only after loaded product rows contain both fields.
+Import/add-product writes omit these fields, leaving existing purchasing code
+unchanged and new products opted out. Saving guidance modifies only these two
+columns on the signed-in owner's product and requires a returned row.
+
+Before production deployment:
+1. Review chapter6-guidance-migration.sql and take/verify a fresh database backup.
+2. Apply to a disposable database with the actual products schema. Check existing
+   rows default false/null, valid zero/decimal targets save, enabled/null and
+   negative/NaN/infinite targets fail, and existing RLS still applies.
+3. Check row counts, ownership, purchasing details and physical counts unchanged.
+4. Deploy only in an attended session with explicit authorization. This migration
+   intentionally fails if columns already exist; inspect first, do not rerun blindly.
+5. Reload products; enable one test product, set desired quantity, then scan with
+   a fresh physical count. Suggestion is opt-in and can be overridden. Disable
+   guidance and confirm manual ordering remains available.
+
+No full rollback script supplied: turning guidance off in the app is preferable
+to dropping user settings. Any schema rollback needs a separately reviewed plan.
+
+Stocktake save reliability - prepared and locally tested, NOT deployed:
+chapter6-atomic-stocktake.sql adds a submission payload and save_stocktake_v1.
+The function uses SECURITY INVOKER, existing RLS, explicit current-user checks,
+product row locks, and an optimistic check against the count originally shown.
+One transaction saves the session, lines and product counts. A repeated request
+returns the original session without replaying older stock counts.
+The app journals each attempt in account-scoped AsyncStorage before network I/O;
+uncertain outcomes retain that reference across restarts. Retry unfinished save
+recovers it. Confirmed database rejection clears the attempt so it can be corrected.
+No automatic fallback to the old partial-save path is allowed.
+
+RELEASE DEPENDENCY: Deploy/review the atomic function before releasing this app
+build. Without it, saving reports that the database update is needed and keeps
+the attempt for retry. Existing production app remains unchanged until release.
+This migration is independent of optional guidance. Do not run either blindly.
+
+Local PostgreSQL 17.11 tests passed with a disposable representative schema and
+owner-scoped RLS: successful zero/decimal counts; deliberate failure after a
+partial write rolls all changes back; duplicate retry leaves newer counts alone;
+two concurrent retries create one session/line set; stale count conflict;
+foreign-owner denial; negative/string/duplicate/empty input rejection.
+Fixture and checks: expo/scripts/stocktake-db-fixture.sql,
+verify-stocktake-db.sql, stocktake-concurrent-retry.sql,
+verify-stocktake-concurrent.sql. Fixture is LOCAL TEST ONLY, never production.
+The test database was stopped afterwards. It contains synthetic data only.
+
+ADDITIONAL VALIDATION COMPLETED 8 NOVEMBER:
+Restored public schema, grants, triggers and policies from the verified existing
+pre-Chapter3 backup into a SECOND disposable local database; applied the already
+deployed Chapter3 SQL there, then the new atomic save migration. Real customer
+data was never restored. Auth uid/role functions and auth.users are minimal local
+stand-ins, while public ownership functions/policies/grants come from the backup.
+Repeated transaction/ownership/failure tests and concurrent retry checks: PASS.
+Anonymous EXECUTE privilege: false (explicitly revoked despite default grants).
+Guidance migration also applied to this local schema and tested: defaults off,
+zero/decimal targets, disabled state, null/negative/NaN/Infinity rejection: PASS.
+The restore script sets row_security=off in its session; tests explicitly turn
+it ON and SET ROLE authenticated. No application roles/policies weakened.
+Both local test databases were stopped; no live migration run.
+
+Still required before production: confirm schema has not changed since backup,
+review deployment/grants in the Supabase environment, back up production, then
+deploy in an attended authorized session. Local tests cannot prove hosted auth,
+PostgREST transport behaviour or native phone operation.
+Neither migration has been applied to Supabase.

@@ -48,6 +48,9 @@ const convertSupabaseProductToApp = (supabaseProduct: SupabaseProduct): Product 
   supplierEmail: supabaseProduct.supplier_email || undefined,
   supplierId: supabaseProduct.supplier_id || undefined,
   minStock: supabaseProduct.min_stock,
+  desiredStockEnabled: supabaseProduct.desired_stock_enabled === true,
+  desiredStockQuantity: supabaseProduct.desired_stock_quantity == null ? undefined : Number(supabaseProduct.desired_stock_quantity),
+  desiredStockAvailable: typeof supabaseProduct.desired_stock_enabled === 'boolean' && 'desired_stock_quantity' in supabaseProduct,
   currentStock: supabaseProduct.current_stock,
   unit: supabaseProduct.unit,
   // ---- Chapter 3 (runtime-guarded: absent until the migration is run) ----
@@ -530,61 +533,7 @@ export class SupabaseService {
     }));
   }
 
-  // Stocktakes
-  static async createStocktake(stocktakeItems: StocktakeItem[]): Promise<void> {
-    if (!this.isAvailable()) {
-      throw new Error('Supabase is not configured');
-    }
-
-    const user = await getCurrentUser();
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-
-    if (!supabase) {
-      throw new Error('Supabase client not available');
-    }
-
-    // Create stocktake session. Do NOT pass `id` — `stocktakes.id` is a uuid
-    // column with `gen_random_uuid()` default. Passing a non-UUID fails RLS
-    // with `invalid input syntax for type uuid`.
-    const { data: stocktakeData, error: stocktakeError } = await supabase
-      .from('stocktakes')
-      .insert({
-        user_id: user.id,
-        date: new Date().toISOString(),
-        status: 'completed',
-      })
-      .select()
-      .single();
-
-    if (stocktakeError) {
-      console.error('Error creating stocktake:', JSON.stringify(stocktakeError, null, 2));
-      const detail = stocktakeError.message || stocktakeError.details || stocktakeError.hint || 'Unknown database error';
-      throw new Error(`Failed to create stocktake: ${detail}`);
-    }
-
-    // Create stocktake items
-    const items = stocktakeItems.map(item => ({
-      stocktake_id: stocktakeData.id,
-      product_id: item.productId,
-      barcode: item.barcode,
-      name: item.name,
-      expected_quantity: item.expectedQuantity,
-      actual_quantity: item.actualQuantity,
-      discrepancy: item.discrepancy,
-    }));
-
-    const { error: itemsError } = await supabase
-      .from('stocktake_items')
-      .insert(items);
-
-    if (itemsError) {
-      console.error('Error creating stocktake items:', JSON.stringify(itemsError, null, 2));
-      const detail = itemsError.message || itemsError.details || itemsError.hint || 'Unknown database error';
-      throw new Error(`Failed to create stocktake items: ${detail}`);
-    }
-  }
+  // Stocktake writes use stocktakeSaveService and the atomic database function.
 
   /**
    * Deletes a purchase order and its linked order_items (via FK cascade).

@@ -101,6 +101,17 @@ export default function StocktakeScreen() {
             <Text style={[styles.subtitle, { color: colors.inactive }]}>
               {currentStocktakeItems.length} {currentStocktakeItems.length === 1 ? 'item' : 'items'}
             </Text>
+            <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/stocktake/history')} style={{ paddingVertical: 12 }}>
+              <Text style={{ color: colors.primary, fontWeight: '600' }}>History & export</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" disabled={isSubmitting} style={{ paddingVertical: 8 }} onPress={async () => {
+              setIsSubmitting(true);
+              try { await submitStocktake(true); router.push('/stocktake/success'); }
+              catch (err) { Alert.alert('Stocktake recovery', err instanceof Error ? err.message : 'Please try again.'); }
+              finally { setIsSubmitting(false); }
+            }}>
+              <Text style={{ color: colors.primary }}>Retry unfinished save</Text>
+            </TouchableOpacity>
           </View>
           
           {currentStocktakeItems.length > 0 ? (

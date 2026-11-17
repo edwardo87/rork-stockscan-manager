@@ -25,7 +25,7 @@ export default function SetupGuideScreen() {
           <FileSpreadsheet size={40} color={colors.primary} style={styles.sectionIcon} />
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Step 1: Prepare Your CSV File</Text>
           <Text style={[styles.sectionText, { color: colors.inactive }]}>
-            Your CSV file should have these exact column headers:
+            This structured CSV layout is an optional starting point. You can also import an existing supplier CSV, Excel or text-based PDF through Settings → Import Supplier Catalogue without rebuilding it into this format:
           </Text>
           <View style={[styles.codeBlock, { backgroundColor: colors.lightGray }]}>
             <Text style={[styles.codeText, { color: colors.text }]}>
@@ -48,7 +48,7 @@ name,description,sku,barcode,category,supplier,supplier_email,cost,price,current
             • cost: Product cost price (optional){"\n"}
             • price: Selling price (optional){"\n"}
             • current_stock: Current quantity in stock{"\n"}
-            • min_stock: Minimum stock level for reorder alerts{"\n"}
+            • min_stock: Legacy minimum-stock value; this does not send automatic alerts{"\n"}
             • unit: Unit of measure (e.g., "each", "box", "kg")
           </Text>
         </View>
@@ -66,14 +66,14 @@ name,description,sku,barcode,category,supplier,supplier_email,cost,price,current
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Step 4: Import to SmartStock</Text>
           <Text style={[styles.sectionText, { color: colors.inactive }]}>
-            1. Go to Settings {">"} Data Management{"\n"}
-            2. Tap "Import CSV File"{"\n"}
-            3. Select your saved CSV file{"\n"}
-            4. Confirm the import when prompted
+            1. Go to Settings {">"} Import Supplier Catalogue{"\n"}
+            2. Choose the supplier and your document{"\n"}
+            3. Review products, purchasing units and any flagged questions{"\n"}
+            4. Select the products to include and approve the reviewed changes
           </Text>
           <Text style={[styles.note, { color: colors.warning }]}>
-            Note: Importing adds products to your existing list — nothing is replaced.
-            Importing the same file more than once will create duplicate products.
+            Review matching existing products and proposed changes before approving.
+            Supplier quantities are not your physical stock counts. Use Stocktake to record actual counts.
           </Text>
         </View>
       </ScrollView>

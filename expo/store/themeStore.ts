@@ -3,36 +3,57 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Appearance } from 'react-native';
 
+// "Worksite" identity: ink navy + hi-vis amber on concrete (light) / slate (dark).
+// Legacy keys keep their roles: `background` = raised surface (cards, bars),
+// `lightGray` = screen canvas, `primary` = tint that works as text AND fill.
 // Light theme colors
 const lightColors = {
-  primary: "#0A4D90",
-  secondary: "#34C759",
+  primary: "#1B2A41",
+  secondary: "#2F9E44",
   background: "#FFFFFF",
-  card: "#F7F9FC",
-  text: "#1C1C1E",
-  border: "#E4E9F2",
-  notification: "#FF3B30",
-  success: "#34C759",
-  warning: "#FF9500",
-  error: "#FF3B30",
-  inactive: "#8E8E93",
-  lightGray: "#F2F4F7",
+  card: "#FAF9F6",
+  text: "#1B2A41",
+  border: "#E4E2DC",
+  notification: "#E03131",
+  success: "#2F9E44",
+  warning: "#F08C00",
+  error: "#E03131",
+  inactive: "#5C677D",
+  lightGray: "#F5F4F1",
+  // Worksite tokens
+  accent: "#F08C00",
+  accentSoft: "#FEF3E2",
+  accentText: "#B46600",
+  successSoft: "#E9F7EC",
+  chip: "#EDF2F7",
+  track: "#EDEBE6",
+  primaryFill: "#1B2A41",
+  onPrimaryFill: "#FFFFFF",
 };
 
 // Dark theme colors
-const darkColors = {
-  primary: "#2E7DD1",
-  secondary: "#30D158",
-  background: "#121212",
-  card: "#1E1E1E",
-  text: "#F7F9FC",
-  border: "#2C2C2C",
-  notification: "#FF453A",
-  success: "#30D158",
-  warning: "#FFD60A",
-  error: "#FF453A",
-  inactive: "#6C6C70",
-  lightGray: "#1C1C1E",
+const darkColors: typeof lightColors = {
+  primary: "#F59E1B",
+  secondary: "#3BBF57",
+  background: "#1C212B",
+  card: "#222834",
+  text: "#F0EDE6",
+  border: "#2A3140",
+  notification: "#FF6B6B",
+  success: "#3BBF57",
+  warning: "#F59E1B",
+  error: "#FF6B6B",
+  inactive: "#9AA3B5",
+  lightGray: "#11141B",
+  // Worksite tokens
+  accent: "#F59E1B",
+  accentSoft: "#382711",
+  accentText: "#FFB454",
+  successSoft: "#16321F",
+  chip: "#262D3A",
+  track: "#2C3444",
+  primaryFill: "#243046",
+  onPrimaryFill: "#F0EDE6",
 };
 
 type ThemeType = 'light' | 'dark';

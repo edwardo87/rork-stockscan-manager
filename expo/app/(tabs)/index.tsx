@@ -115,6 +115,9 @@ export default function OrderScreen() {
     );
   };
 
+  const sendDisabled = currentOrderItems.length === 0 || blockedCount > 0 || isSubmitting;
+  const supplierCount = new Set(currentOrderItems.map(i => i.supplier).filter(Boolean)).size;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       {showScanner ? (
@@ -125,23 +128,38 @@ export default function OrderScreen() {
         />
       ) : (
         <>
-          <View style={[styles.header, { 
-            backgroundColor: colors.background,
-            borderBottomColor: colors.border
-          }]}>
-            <View style={styles.headerText}>
-              <Text style={[styles.title, { color: colors.text }]}>Order Items</Text>
-              <Text style={[styles.subtitle, { color: colors.inactive }]}>
-                {currentOrderItems.length} {currentOrderItems.length === 1 ? 'item' : 'items'}
-              </Text>
-            </View>
+          <View style={styles.topArea}>
             <TouchableOpacity
-              style={styles.historyButton}
-              onPress={() => router.push('/po-preview')}
+              style={[styles.scanHero, { backgroundColor: colors.primaryFill }]}
+              onPress={() => setShowScanner(true)}
+              activeOpacity={0.85}
+              testID="order-scan-hero"
             >
-              <ClipboardList size={18} color={colors.primary} />
-              <Text style={[styles.historyButtonText, { color: colors.primary }]}>History</Text>
+              <View style={[styles.scanTile, { backgroundColor: colors.accent }]}>
+                <ScanBarcode size={26} color="#1B2A41" strokeWidth={2.4} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.scanTitle, { color: colors.onPrimaryFill }]}>Scan to add</Text>
+                <Text style={[styles.scanSub, { color: colors.onPrimaryFill }]}>Barcode or supplier code</Text>
+              </View>
             </TouchableOpacity>
+
+            <View style={styles.sectionHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.overline, { color: colors.accentText }]}>CURRENT ORDER</Text>
+                <Text style={[styles.subtitle, { color: colors.inactive }]}>
+                  {currentOrderItems.length} {currentOrderItems.length === 1 ? 'item' : 'items'}
+                  {supplierCount > 0 ? ` · ${supplierCount} ${supplierCount === 1 ? 'supplier' : 'suppliers'}` : ''}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.historyButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                onPress={() => router.push('/po-preview')}
+              >
+                <ClipboardList size={16} color={colors.text} />
+                <Text style={[styles.historyButtonText, { color: colors.text }]}>History</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           
           {blockedCount > 0 && (
@@ -166,49 +184,40 @@ export default function OrderScreen() {
                   onRemove={removeFromOrder}
                 />
               )}
-              ListFooterComponent={orderTotal ? (
-                <View style={styles.totalRow}>
-                  <Text style={[styles.totalLabel, { color: colors.inactive }]}>
-                    Order total (ex GST){orderTotal.unpriced > 0 ? ` · ${orderTotal.unpriced} without price` : ''}
-                  </Text>
-                  <Text style={[styles.totalValue, { color: colors.text }]}>${orderTotal.total.toFixed(2)}</Text>
-                </View>
-              ) : null}
               contentContainerStyle={styles.listContent}
             />
           ) : (
-            <EmptyState 
-              type="order" 
-              onAction={() => setShowScanner(true)} 
-            />
+            <EmptyState type="order" />
           )}
           
-          <View style={[styles.actionBar, { 
-            backgroundColor: colors.background,
-            borderTopColor: colors.border
-          }]}>
-            <TouchableOpacity 
-              style={[styles.scanButton, { backgroundColor: colors.primary }]} 
-              onPress={() => setShowScanner(true)}
-            >
-              <ScanBarcode size={24} color={colors.background} />
-              <Text style={[styles.scanButtonText, { color: colors.background }]}>Scan</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[
-                styles.submitButton,
-                { backgroundColor: colors.secondary },
-                (currentOrderItems.length === 0 || blockedCount > 0) && { backgroundColor: colors.inactive }
-              ]} 
-              onPress={handleSubmitOrder}
-              disabled={currentOrderItems.length === 0 || isSubmitting}
-              accessibilityState={{ disabled: currentOrderItems.length === 0 || blockedCount > 0 || isSubmitting }}
-            >
-              <Send size={24} color={colors.background} />
-              <Text style={[styles.submitButtonText, { color: colors.background }]}>{isSubmitting ? 'Submitting…' : 'Submit Order'}</Text>
-            </TouchableOpacity>
-          </View>
+          {currentOrderItems.length > 0 && (
+            <View style={[styles.actionBar, { 
+              backgroundColor: colors.background,
+              borderTopColor: colors.border
+            }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.totalLabel, { color: colors.inactive }]}>
+                  Order total ex GST{orderTotal && orderTotal.unpriced > 0 ? ` · ${orderTotal.unpriced} unpriced` : ''}
+                </Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>
+                  {orderTotal ? `$${orderTotal.total.toFixed(2)}` : '—'}
+                </Text>
+              </View>
+              <TouchableOpacity 
+                style={[
+                  styles.submitButton,
+                  { backgroundColor: colors.primaryFill },
+                  sendDisabled && { opacity: 0.45 }
+                ]} 
+                onPress={handleSubmitOrder}
+                disabled={currentOrderItems.length === 0 || isSubmitting}
+                accessibilityState={{ disabled: sendDisabled }}
+              >
+                <Send size={18} color={colors.onPrimaryFill} />
+                <Text style={[styles.submitButtonText, { color: colors.onPrimaryFill }]}>{isSubmitting ? 'Sending…' : 'Send order'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </>
       )}
     </View>
@@ -219,49 +228,75 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
+  topArea: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  scanHero: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 14,
     padding: 16,
-    borderBottomWidth: 1,
+    borderRadius: 20,
   },
-  headerText: {
-    flex: 1,
+  scanTile: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  scanSub: {
+    fontSize: 13,
+    opacity: 0.7,
+    marginTop: 2,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+    marginBottom: 4,
+  },
+  overline: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  subtitle: {
+    fontSize: 14,
+    marginTop: 2,
+    fontWeight: '500',
   },
   historyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'transparent',
-    paddingVertical: 8,
+    paddingVertical: 7,
     paddingHorizontal: 12,
+    gap: 6,
   },
   historyButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  subtitle: {
-    fontSize: 16,
-    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '700',
   },
   listContent: {
     padding: 16,
+    paddingTop: 10,
   },
   blockBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
     marginHorizontal: 16,
-    marginTop: 12,
+    marginTop: 10,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
   },
   blockBannerText: {
@@ -269,51 +304,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
   totalLabel: {
-    fontSize: 14,
+    fontSize: 12,
+    fontWeight: '600',
   },
   totalValue: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    fontVariant: ['tabular-nums'],
   },
   actionBar: {
     flexDirection: 'row',
-    padding: 16,
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderTopWidth: 1,
   },
-  scanButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginRight: 12,
-  },
-  scanButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
   submitButton: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    gap: 8,
   },
   submitButtonText: {
     fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+    fontWeight: '700',
   },
 });

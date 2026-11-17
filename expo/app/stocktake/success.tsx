@@ -26,11 +26,11 @@ export default function StocktakeSuccessScreen() {
         </Text>
         
         <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.primary }]}
+          style={[styles.button, { backgroundColor: colors.primaryFill }]}
           onPress={() => router.replace('/stocktake')}
         >
           <Home size={20} color={colors.background} />
-          <Text style={[styles.buttonText, { color: colors.background }]}>Back to Home</Text>
+          <Text style={[styles.buttonText, { color: colors.onPrimaryFill }]}>Back to Home</Text>
         </TouchableOpacity>
       </View>
     </View>

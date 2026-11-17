@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Search, Filter, Plus, Upload, FileText, QrCode, FileSpreadsheet } from 'lucide-react-native';
+import { Search, Plus, X, FileText, QrCode, FileSpreadsheet } from 'lucide-react-native';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useThemeStore } from '@/store/themeStore';
 import ProductCard from '@/components/ProductCard';
@@ -157,53 +157,47 @@ export default function ProductsScreen() {
     router.push('/qr-codes-print');
   };
 
+  const supplierCount = new Set(products.map(p => p.supplier?.trim()).filter(Boolean)).size;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
-      <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
-        <View style={[styles.searchContainer, { borderBottomColor: colors.border }]}>
-        <View style={[styles.searchInputContainer, { backgroundColor: colors.lightGray }]}>
-          <Search size={20} color={colors.inactive} style={styles.searchIcon} />
+      <View style={styles.headerContainer}>
+        <View style={styles.titleRow}>
+          <Text style={[styles.countText, { color: colors.inactive }]}>
+            {products.length} {products.length === 1 ? 'item' : 'items'}
+            {supplierCount > 0 ? ` · ${supplierCount} ${supplierCount === 1 ? 'supplier' : 'suppliers'}` : ''}
+          </Text>
+          <TouchableOpacity
+            style={[styles.iconButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+            onPress={handlePrintQRCodes}
+            accessibilityLabel="Print QR codes"
+          >
+            <QrCode size={18} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.uploadButton, { backgroundColor: colors.primaryFill }]}
+            onPress={() => setShowUploadOptions(!showUploadOptions)}
+            testID="products-import-menu"
+          >
+            {showUploadOptions ? <X size={18} color={colors.onPrimaryFill} /> : <Plus size={18} color={colors.onPrimaryFill} />}
+            <Text style={[styles.uploadButtonText, { color: colors.onPrimaryFill }]}>{showUploadOptions ? 'Close' : 'Add / Import'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.searchInputContainer, { backgroundColor: colors.background, borderColor: colors.border }]}>
+          <Search size={18} color={colors.inactive} style={styles.searchIcon} />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search products..."
+            placeholder="Search name, code or barcode"
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholderTextColor={colors.inactive}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Text style={[styles.clearButton, { color: colors.primary }]}>Clear</Text>
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+              <X size={18} color={colors.inactive} />
             </TouchableOpacity>
           )}
-        </View>
-        
-        <TouchableOpacity style={[styles.filterButton, { backgroundColor: colors.lightGray }]}>
-          <Filter size={20} color={colors.text} />
-        </TouchableOpacity>
-        </View>
-        
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity 
-            style={[styles.uploadButton, { backgroundColor: colors.primary }]}
-            onPress={() => setShowUploadOptions(!showUploadOptions)}
-          >
-            <Upload size={20} color={colors.background} />
-            <Text style={[styles.uploadButtonText, { color: colors.background }]}>Upload Stock</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.qrButton, { backgroundColor: colors.secondary }]}
-            onPress={handlePrintQRCodes}
-          >
-            <QrCode size={20} color={colors.background} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.addButton, { backgroundColor: colors.primary }]}
-            onPress={handleAddProduct}
-          >
-            <Plus size={20} color={colors.background} />
-          </TouchableOpacity>
         </View>
         
         {showUploadOptions && (
@@ -227,7 +221,7 @@ export default function ProductsScreen() {
               }}
               testID="import-supplier-catalogue"
             >
-              <FileSpreadsheet size={20} color={colors.primary} />
+              <FileSpreadsheet size={20} color={colors.accent} />
               <View style={styles.uploadOptionText}>
                 <Text style={[styles.uploadOptionTitle, { color: colors.text }]}>Import Supplier Catalogue</Text>
                 <Text style={[styles.uploadOptionDescription, { color: colors.inactive }]}>Price list as CSV, Excel or PDF — review before anything is added</Text>
@@ -298,97 +292,82 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerContainer: {
-    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
-  searchContainer: {
-    flexDirection: 'row',
-    padding: 16,
-  },
-  searchInputContainer: {
-    flex: 1,
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 8,
+    gap: 8,
+    marginBottom: 12,
+  },
+  countText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
     paddingHorizontal: 12,
-    marginRight: 12,
+    marginBottom: 8,
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    height: 40,
+    height: 44,
     fontSize: 16,
-  },
-  clearButton: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  filterButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   listContent: {
     padding: 16,
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    gap: 12,
+    paddingTop: 8,
   },
   errorBanner: {
     marginHorizontal: 16,
     marginBottom: 8,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   errorBannerText: {
     fontSize: 14,
     fontWeight: '500',
   },
   uploadButton: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    gap: 8,
+    height: 42,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    gap: 6,
   },
   uploadButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  qrButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+    fontSize: 15,
+    fontWeight: '700',
   },
   uploadOptionsContainer: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 12,
+    marginBottom: 8,
+    borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
   },
   uploadOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 14,
     borderBottomWidth: 1,
   },
   uploadOptionText: {
@@ -396,11 +375,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   uploadOptionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     marginBottom: 2,
   },
   uploadOptionDescription: {
-    fontSize: 14,
+    fontSize: 13,
   },
 });

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
-import { ArrowLeft, FileText, Mail, Eye, Printer, Trash2 } from 'lucide-react-native';
+import { FileText, Mail, Eye, Printer, Trash2 } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import { useThemeStore } from '@/store/themeStore';
 import { useInventoryStore } from '@/store/inventoryStore';
@@ -19,7 +18,6 @@ function poOrderTotal(order: { items: any[] }): number {
 }
 
 export default function POPreviewScreen() {
-  const router = useRouter();
   const { colors } = useThemeStore();
   const { purchaseOrders, suppliers, deletePurchaseOrder } = useInventoryStore();
   const isMountedRef = useRef(true);
@@ -256,152 +254,124 @@ export default function POPreviewScreen() {
   }, [deletePurchaseOrder, isProcessing]);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => router.back()}
-        >
-          <ArrowLeft size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Order History</Text>
-      </View>
-
+    <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       {sortedOrders.length > 0 ? (
-        <ScrollView style={styles.content}>
-          {sortedOrders.map((order, index) => (
-            <View 
-              key={order.id} 
-              style={[styles.poContainer, { 
-                backgroundColor: colors.lightGray,
-                borderColor: colors.border 
-              }]}
-            >
-              <View style={styles.poHeader}>
-                <View>
-                  <Text style={[styles.poNumber, { color: colors.text }]}>
-                    {getPoNumber(order.id)}
-                  </Text>
-                  <Text style={[styles.poSupplier, { color: colors.text }]}>
-                    {order.supplierName}
-                  </Text>
-                  <Text style={[styles.poStatus, { 
-                    color: order.status === 'submitted' ? colors.success : colors.inactive 
-                  }]}>
-                    Status: {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                  </Text>
-                </View>
-                <Text style={[styles.poDate, { color: colors.inactive }]}>
-                  {formatDate(new Date(order.date))}
-                </Text>
-              </View>
-
-              <View style={[styles.tableHeader, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.columnHeader, styles.codeColumn, { color: colors.inactive }]}>Code</Text>
-                <Text style={[styles.columnHeader, styles.descColumn, { color: colors.inactive }]}>Description</Text>
-                <Text style={[styles.columnHeader, styles.qtyColumn, { color: colors.inactive }]}>Qty</Text>
-              </View>
-
-              {order.items.map((item: any, idx: number) => {
-                // Chapter 3: supplier code + order quantity in purchasing units
-                // when the item carries a purchasing snapshot; legacy items
-                // keep the original barcode/quantity display.
-                const code = item.supplierCode?.trim() || item.barcode;
-                const qty = item.orderQuantity !== undefined
-                  ? formatOrderQuantity(item, item.orderQuantity)
-                  : null;
-                return (
-                  <View
-                    key={idx}
-                    style={[styles.tableRow, { borderBottomColor: colors.border }]}
-                  >
-                    <Text style={[styles.cell, styles.codeColumn, { color: colors.text }]}>
-                      {code}
-                    </Text>
-                    <Text
-                      style={[styles.cell, styles.descColumn, { color: colors.text }]}
-                      numberOfLines={2}
-                    >
-                      {item.name}
-                    </Text>
-                    <Text style={[styles.cell, styles.qtyColumn, { color: colors.text }]}>
-                      {qty ? `${qty.main}${qty.stockEquivalent ? ` ${qty.stockEquivalent}` : ''}` : item.quantity}
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+          <Text style={[styles.countLine, { color: colors.inactive }]}>
+            {sortedOrders.length} {sortedOrders.length === 1 ? 'order' : 'orders'} · newest first
+          </Text>
+          {sortedOrders.map((order) => {
+            const total = poOrderTotal(order);
+            const submitted = order.status === 'submitted';
+            return (
+              <View
+                key={order.id}
+                style={[styles.poContainer, { backgroundColor: colors.background, borderColor: colors.border }]}
+              >
+                <View style={styles.poHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.poNumber, { color: colors.text }]}>{getPoNumber(order.id)}</Text>
+                    <Text style={[styles.poSupplier, { color: colors.inactive }]} numberOfLines={1}>
+                      {order.supplierName} · {formatDate(new Date(order.date))}
                     </Text>
                   </View>
-                );
-              })}
+                  <View style={[styles.statusChip, { backgroundColor: submitted ? colors.successSoft : colors.chip }]}>
+                    <Text style={[styles.statusChipText, { color: submitted ? colors.success : colors.inactive }]}>
+                      {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                    </Text>
+                  </View>
+                </View>
 
-              <View style={styles.poFooter}>
-                <Text style={[styles.totalItems, { color: colors.inactive }]}>
-                  Total Items: {order.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}
-                  {poOrderTotal(order) > 0 ? `  •  Order Total: $${poOrderTotal(order).toFixed(2)} (ex GST)` : ''}
-                </Text>
-                
+                <View style={[styles.docket, { borderColor: colors.border }]}>
+                  {order.items.map((item: any, idx: number) => {
+                    // Chapter 3: supplier code + order quantity in purchasing units
+                    // when the item carries a purchasing snapshot; legacy items
+                    // keep the original barcode/quantity display.
+                    const code = item.supplierCode?.trim() || item.barcode;
+                    const qty = item.orderQuantity !== undefined
+                      ? formatOrderQuantity(item, item.orderQuantity)
+                      : null;
+                    return (
+                      <View key={idx} style={styles.docketRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.docketQty, { color: colors.text }]} numberOfLines={2}>
+                            {qty ? qty.main : `${item.quantity} ×`}{'  '}
+                            <Text style={[styles.docketName, { color: colors.text }]}>{item.name}</Text>
+                          </Text>
+                          <Text style={[styles.docketMeta, { color: colors.inactive }]} numberOfLines={1}>
+                            {code}{qty?.stockEquivalent ? `  ${qty.stockEquivalent}` : ''}
+                          </Text>
+                        </View>
+                        {item?.lineTotal != null ? (
+                          <Text style={[styles.docketTotal, { color: colors.text }]}>${Number(item.lineTotal).toFixed(2)}</Text>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+
+                <View style={[styles.totalRow, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.totalLabel, { color: colors.inactive }]}>
+                    {order.items.length} {order.items.length === 1 ? 'line' : 'lines'}
+                    {total > 0 ? ' · Order total ex GST' : ''}
+                  </Text>
+                  {total > 0 ? (
+                    <Text style={[styles.totalValue, { color: colors.text }]}>${total.toFixed(2)}</Text>
+                  ) : null}
+                </View>
+
                 <View style={styles.buttonGrid}>
                   <TouchableOpacity
-                    style={[styles.actionButton, {
-                      borderColor: colors.primary,
-                      opacity: isProcessing ? 0.6 : 1,
-                    }]}
+                    style={[styles.actionButton, { borderColor: colors.border, opacity: isProcessing ? 0.6 : 1 }]}
                     onPress={() => handlePreviewPDF(order)}
                     disabled={isProcessing}
                   >
-                    <Eye size={18} color={colors.primary} />
-                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>View PDF</Text>
+                    <Eye size={16} color={colors.text} />
+                    <Text style={[styles.actionButtonText, { color: colors.text }]}>PDF</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionButton, {
-                      borderColor: colors.primary,
-                      opacity: isProcessing ? 0.6 : 1,
-                    }]}
+                    style={[styles.actionButton, { borderColor: colors.border, opacity: isProcessing ? 0.6 : 1 }]}
                     onPress={() => handlePrintPO(order)}
                     disabled={isProcessing}
                   >
-                    <Printer size={18} color={colors.primary} />
-                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>Print</Text>
+                    <Printer size={16} color={colors.text} />
+                    <Text style={[styles.actionButtonText, { color: colors.text }]}>Print</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionButtonFilled, {
-                      backgroundColor: colors.primary,
-                      opacity: isProcessing ? 0.6 : 1,
-                    }]}
+                    style={[styles.actionButton, { backgroundColor: colors.primaryFill, borderColor: colors.primaryFill, opacity: isProcessing ? 0.6 : 1 }]}
                     onPress={() => handleSendPO(order)}
                     disabled={isProcessing}
                   >
-                    <Mail size={18} color={colors.background} />
-                    <Text style={[styles.actionButtonText, { color: colors.background }]}>Email</Text>
+                    <Mail size={16} color={colors.onPrimaryFill} />
+                    <Text style={[styles.actionButtonText, { color: colors.onPrimaryFill }]}>Email</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionButton, {
-                      borderColor: colors.error || '#d93025',
-                      opacity: isProcessing ? 0.6 : 1,
-                    }]}
+                    style={[styles.iconAction, { borderColor: colors.border, opacity: isProcessing ? 0.6 : 1 }]}
                     onPress={() => handleDeletePO(order)}
                     disabled={isProcessing}
+                    accessibilityLabel="Delete order"
                   >
-                    <Trash2 size={18} color={colors.error || '#d93025'} />
-                    <Text style={[styles.actionButtonText, { color: colors.error || '#d93025' }]}>Delete</Text>
+                    <Trash2 size={16} color={colors.error} />
                   </TouchableOpacity>
                 </View>
-
-                <Text style={[styles.senderNotice, { color: colors.inactive }]}>
-                  PO emails will be sent from your device&apos;s default mail app/account.
-                </Text>
               </View>
-            </View>
-          ))}
+            );
+          })}
+          <Text style={[styles.senderNotice, { color: colors.inactive }]}>
+            PO emails are sent from your device&apos;s default mail app/account.
+          </Text>
         </ScrollView>
       ) : (
         <View style={styles.emptyState}>
-          <FileText size={64} color={colors.primary} style={styles.emptyIcon} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            No Orders Available
-          </Text>
+          <View style={[styles.emptyIconTile, { backgroundColor: colors.accentSoft }]}>
+            <FileText size={36} color={colors.accent} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No orders yet</Text>
           <Text style={[styles.emptyMessage, { color: colors.inactive }]}>
-            No purchase orders yet. Orders you submit will appear here with their date, supplier and reference.
+            Orders you send appear here with their date, supplier and reference.
           </Text>
         </View>
       )}
@@ -410,147 +380,72 @@ export default function POPreviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  backButton: {
-    marginRight: 16,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
+  container: { flex: 1 },
+  content: { flex: 1 },
+  contentInner: { padding: 16, paddingBottom: 32 },
+  countLine: { fontSize: 13, fontWeight: '600', marginBottom: 10, marginLeft: 2 },
   poContainer: {
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  poHeader: {
+    marginBottom: 14,
     padding: 16,
+  },
+  poHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  poNumber: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  poSupplier: { fontSize: 13, fontWeight: '500', marginTop: 2 },
+  statusChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  statusChipText: { fontSize: 12, fontWeight: '700' },
+  docket: {
+    marginTop: 14,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
+    gap: 10,
+  },
+  docketRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  docketQty: { fontSize: 14, fontWeight: '700' },
+  docketName: { fontSize: 14, fontWeight: '500' },
+  docketMeta: { fontSize: 12, marginTop: 2, fontVariant: ['tabular-nums'] },
+  docketTotal: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
   },
-  poNumber: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  poSupplier: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  poStatus: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  poDate: {
-    fontSize: 14,
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-  },
-  columnHeader: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-  },
-  cell: {
-    fontSize: 14,
-  },
-  codeColumn: {
-    width: '25%',
-  },
-  descColumn: {
-    width: '55%',
-  },
-  qtyColumn: {
-    width: '20%',
-    textAlign: 'right',
-  },
-  poFooter: {
-    padding: 16,
-  },
-  totalItems: {
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  buttonGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  totalLabel: { fontSize: 13, fontWeight: '500' },
+  totalValue: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  buttonGrid: { flexDirection: 'row', gap: 8, marginTop: 14 },
   actionButton: {
-    flexBasis: '48%',
-    flexGrow: 1,
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 6,
+  },
+  iconAction: {
+    width: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
     borderWidth: 1,
   },
-  actionButtonFilled: {
-    flexBasis: '48%',
-    flexGrow: 1,
-    flexDirection: 'row',
+  actionButtonText: { fontSize: 13, fontWeight: '700' },
+  senderNotice: { fontSize: 12, marginTop: 4, textAlign: 'center' },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  emptyIconTile: {
+    width: 76,
+    height: 76,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 8,
+    marginBottom: 20,
   },
-  actionButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  senderNotice: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  emptyIcon: {
-    marginBottom: 24,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptyMessage: {
-    fontSize: 16,
-    textAlign: 'center',
-    maxWidth: 250,
-  },
+  emptyTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
+  emptyMessage: { fontSize: 15, textAlign: 'center', maxWidth: 280, lineHeight: 21 },
 });

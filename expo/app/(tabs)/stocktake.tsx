@@ -128,24 +128,24 @@ export default function StocktakeScreen() {
             borderTopColor: colors.border
           }]}>
             <TouchableOpacity 
-              style={[styles.scanButton, { backgroundColor: colors.primary }]} 
+              style={[styles.scanButton, { backgroundColor: colors.accent }]} 
               onPress={() => setShowScanner(true)}
             >
-              <ScanBarcode size={24} color={colors.background} />
-              <Text style={[styles.scanButtonText, { color: colors.background }]}>Scan</Text>
+              <ScanBarcode size={24} color={'#1B2A41'} />
+              <Text style={[styles.scanButtonText, { color: '#1B2A41' }]}>Scan</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
               style={[
                 styles.submitButton,
-                { backgroundColor: colors.secondary },
-                currentStocktakeItems.length === 0 && { backgroundColor: colors.inactive }
+                { backgroundColor: colors.primaryFill },
+                currentStocktakeItems.length === 0 && { opacity: 0.45 }
               ]} 
               onPress={handleSubmitStocktake}
               disabled={currentStocktakeItems.length === 0 || isSubmitting}
             >
-              <Save size={24} color={colors.background} />
-              <Text style={[styles.submitButtonText, { color: colors.background }]}>{isSubmitting ? 'Saving…' : 'Submit Stocktake'}</Text>
+              <Save size={24} color={colors.onPrimaryFill} />
+              <Text style={[styles.submitButtonText, { color: colors.onPrimaryFill }]}>{isSubmitting ? 'Saving…' : 'Submit Stocktake'}</Text>
             </TouchableOpacity>
           </View>
         </>

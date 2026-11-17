@@ -111,9 +111,10 @@ function RootLayoutNav() {
           headerStyle: {
             backgroundColor: colors.background,
           },
-          headerTintColor: colors.primary,
+          headerTintColor: colors.text,
+          headerShadowVisible: false,
           headerTitleStyle: {
-            fontWeight: '600',
+            fontWeight: '700',
             color: colors.text,
           },
           contentStyle: {
@@ -125,7 +126,7 @@ function RootLayoutNav() {
         <Stack.Screen 
           name="product/[id]" 
           options={{ 
-            title: "Product Details",
+            title: "Product",
             presentation: "card",
           }} 
         />
@@ -153,7 +154,7 @@ function RootLayoutNav() {
         <Stack.Screen 
           name="po-preview" 
           options={{ 
-            title: "PO Preview",
+            title: "Order History",
             presentation: "card",
           }} 
         />

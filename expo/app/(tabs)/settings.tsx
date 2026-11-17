@@ -155,7 +155,8 @@ export default function SettingsScreen() {
           <Switch 
             value={theme === 'dark'}
             onValueChange={toggleTheme}
-            trackColor={{ false: colors.lightGray, true: colors.primary }}
+            trackColor={{ false: colors.track, true: colors.accent }}
+            thumbColor="#FFFFFF"
           />
         </TouchableOpacity>
       </View>
@@ -178,7 +179,8 @@ export default function SettingsScreen() {
           <Switch 
             value={lowStockAlerts}
             onValueChange={toggleLowStockAlerts}
-            trackColor={{ false: colors.lightGray, true: colors.primary }}
+            trackColor={{ false: colors.track, true: colors.accent }}
+            thumbColor="#FFFFFF"
           />
         </View>
 
@@ -196,7 +198,8 @@ export default function SettingsScreen() {
           <Switch 
             value={orderUpdates}
             onValueChange={toggleOrderUpdates}
-            trackColor={{ false: colors.lightGray, true: colors.primary }}
+            trackColor={{ false: colors.track, true: colors.accent }}
+            thumbColor="#FFFFFF"
           />
         </View>
 
@@ -214,7 +217,8 @@ export default function SettingsScreen() {
           <Switch 
             value={recentlyOrdered}
             onValueChange={toggleRecentlyOrdered}
-            trackColor={{ false: colors.lightGray, true: colors.primary }}
+            trackColor={{ false: colors.track, true: colors.accent }}
+            thumbColor="#FFFFFF"
           />
         </View>
       </View>

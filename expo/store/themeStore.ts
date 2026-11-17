@@ -61,8 +61,13 @@ type ThemeType = 'light' | 'dark';
 interface ThemeState {
   theme: ThemeType;
   colors: typeof lightColors;
+  /** True until the user picks a theme in Settings; then system changes are ignored. */
+  followSystem: boolean;
   toggleTheme: () => void;
+  /** Explicit user choice (Settings). Stops following the system theme. */
   setTheme: (theme: ThemeType) => void;
+  /** System appearance change — only applied while following the system. */
+  applySystemTheme: (theme: ThemeType) => void;
 }
 
 // Get the system theme safely
@@ -74,39 +79,43 @@ const getSystemTheme = (): ThemeType => {
   }
 };
 
+const paletteFor = (theme: ThemeType) => (theme === 'dark' ? darkColors : lightColors);
+
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
       theme: getSystemTheme(),
-      colors: getSystemTheme() === 'dark' ? darkColors : lightColors,
-      
+      colors: paletteFor(getSystemTheme()),
+      followSystem: true,
+
       toggleTheme: () => {
-        const currentState = get();
-        const newTheme = currentState.theme === 'light' ? 'dark' : 'light';
-        set({
-          theme: newTheme,
-          colors: newTheme === 'dark' ? darkColors : lightColors,
-        });
+        const newTheme: ThemeType = get().theme === 'light' ? 'dark' : 'light';
+        set({ theme: newTheme, colors: paletteFor(newTheme), followSystem: false });
       },
-      
+
       setTheme: (theme) => {
-        const currentState = get();
-        if (currentState.theme !== theme) {
-          set({
-            theme,
-            colors: theme === 'dark' ? darkColors : lightColors,
-          });
-        }
+        set({ theme, colors: paletteFor(theme), followSystem: false });
+      },
+
+      applySystemTheme: (theme) => {
+        const state = get();
+        if (!state.followSystem || state.theme === theme) return;
+        set({ theme, colors: paletteFor(theme) });
       },
     }),
     {
       name: 'theme-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          // Ensure colors are set correctly after rehydration
-          state.colors = state.theme === 'dark' ? darkColors : lightColors;
-        }
+      // Persist only the choice — colours always come from the current palette,
+      // so older saved palettes can never override the app's colours.
+      partialize: (state) => ({ theme: state.theme, followSystem: state.followSystem }),
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<Pick<ThemeState, 'theme' | 'followSystem'>>;
+        const theme: ThemeType = saved.theme === 'dark' || saved.theme === 'light' ? saved.theme : current.theme;
+        // Saves from before this flag existed were a deliberate pick only if the user toggled;
+        // treat them as manual so the user's last choice is kept.
+        const followSystem = typeof saved.followSystem === 'boolean' ? saved.followSystem : saved.theme ? false : true;
+        return { ...current, theme, followSystem, colors: paletteFor(theme) };
       },
     }
   )

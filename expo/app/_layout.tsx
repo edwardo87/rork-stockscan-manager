@@ -87,7 +87,7 @@ function RootLayoutNav() {
         // Use setTimeout to ensure state update happens after current render cycle
         timeoutId = setTimeout(() => {
           if (isMounted) {
-            useThemeStore.getState().setTheme(colorScheme as 'light' | 'dark');
+            useThemeStore.getState().applySystemTheme(colorScheme as 'light' | 'dark');
           }
         }, 0);
       }

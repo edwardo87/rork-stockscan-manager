@@ -12,7 +12,7 @@ import { trpcClient } from '@/lib/trpc';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { colors, theme, toggleTheme } = useThemeStore();
+  const { colors, theme, setTheme } = useThemeStore();
   const [isTestingEnv, setIsTestingEnv] = useState(false);
   const isMountedRef = useRef(true);
 
@@ -138,10 +138,7 @@ export default function SettingsScreen() {
       <View style={[styles.section, { backgroundColor: colors.background }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Appearance</Text>
         
-        <TouchableOpacity 
-          style={[styles.settingRow, { borderTopColor: colors.border }]}
-          onPress={toggleTheme}
-        >
+        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
           <View style={styles.settingInfo}>
             <View style={styles.settingTextContainer}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>
@@ -154,11 +151,12 @@ export default function SettingsScreen() {
           </View>
           <Switch 
             value={theme === 'dark'}
-            onValueChange={toggleTheme}
+            onValueChange={(on) => setTheme(on ? 'dark' : 'light')}
             trackColor={{ false: colors.track, true: colors.accent }}
             thumbColor="#FFFFFF"
+            testID="dark-mode-switch"
           />
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* Notifications Section */}
